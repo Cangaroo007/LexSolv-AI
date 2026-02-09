@@ -39,6 +39,7 @@ from models.schemas import (
 from db.database import async_engine, Base, get_db
 from services.forensic_engine import ForensicAnalyzer
 from services.document_generator import DocumentGenerator
+from services.privacy_vault import DeIdentifier, re_identify, get_vault_stats
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -638,6 +639,92 @@ async def generate_safe_harbour(req: SafeHarbourRequest):
         company_name=req.company.legal_name,
         practitioner_name=req.firm_profile.practitioner_name,
     )
+
+
+# ===================================================================
+# Privacy Vault endpoints (Anonymization & Re-identification)
+# ===================================================================
+
+privacy_engine = DeIdentifier()
+
+
+class DeIdentifyRequest(BaseModel):
+    """Request body for de-identifying financial data before Claude analysis."""
+
+    data: list[dict] | dict = []
+    ttl_seconds: int = 1800
+    extra_sensitive_fields: list[str] = []
+    redact_mode: bool = False
+
+
+class ReIdentifyRequest(BaseModel):
+    """Request body for re-identifying Claude's analysis output."""
+
+    vault_id: str
+    analysis_output: dict | list | str
+    destroy_after: bool = True
+
+
+@app.post(
+    "/api/privacy/de-identify",
+    tags=["Privacy Vault"],
+    summary="De-identify sensitive data before sending to Claude",
+)
+async def de_identify_data(req: DeIdentifyRequest):
+    """
+    Scan financial JSON data (invoices, transactions, contacts) and replace
+    sensitive fields (names, addresses, emails, phones, ABNs) with generic
+    tokens like ENTITY_001, ADDRESS_002, etc.
+
+    Returns the sanitized data (safe for Claude) and a vault_id needed
+    to re-identify the real values later.
+    """
+    engine = DeIdentifier(
+        ttl_seconds=req.ttl_seconds,
+        extra_sensitive_fields=req.extra_sensitive_fields if req.extra_sensitive_fields else None,
+        redact_mode=req.redact_mode,
+    )
+    result = engine.de_identify(req.data)
+    return {
+        "vault_id": result.vault_id,
+        "sanitized_data": result.sanitized_data,
+        "field_counts": result.field_counts,
+        "total_tokenized": result.total_tokenized,
+    }
+
+
+@app.post(
+    "/api/privacy/re-identify",
+    tags=["Privacy Vault"],
+    summary="Re-identify tokens in Claude's analysis with real values",
+)
+async def re_identify_data(req: ReIdentifyRequest):
+    """
+    Takes Claude's analysis output (which uses tokens like ENTITY_001)
+    and swaps the real names/values back in before saving to the final report.
+    """
+    try:
+        restored = re_identify(
+            analysis_output=req.analysis_output,
+            vault_id=req.vault_id,
+            destroy_after=req.destroy_after,
+        )
+        return {
+            "status": "success",
+            "restored_data": restored,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get(
+    "/api/privacy/vault-stats",
+    tags=["Privacy Vault"],
+    summary="Get privacy vault statistics",
+)
+async def vault_stats():
+    """Return aggregate stats about active de-identification vaults."""
+    return get_vault_stats()
 
 
 # Serve generated documents
