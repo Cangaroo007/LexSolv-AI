@@ -68,12 +68,19 @@ async def lifespan(app: FastAPI):
     # Import all ORM models so Base.metadata knows about them
     import db.models  # noqa: F401
 
-    logger.info("Connecting to PostgreSQL…")
-    async with async_engine.begin() as conn:
-        # In production, use Alembic migrations instead of create_all.
-        # This is a safety net for local development.
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables verified")
+    if async_engine is not None:
+        try:
+            logger.info("Connecting to PostgreSQL…")
+            async with async_engine.begin() as conn:
+                # In production, use Alembic migrations instead of create_all.
+                # This is a safety net for local development.
+                await conn.run_sync(Base.metadata.create_all)
+            logger.info("Database tables verified")
+        except Exception as exc:
+            logger.error("Could not connect to database: %s", exc)
+            logger.warning("App will start without database — data endpoints will return errors")
+    else:
+        logger.warning("DATABASE_URL not set — running without database")
 
     # --- Integration clients -----------------------------------------------
     if XERO_CLIENT_ID:
@@ -99,7 +106,8 @@ async def lifespan(app: FastAPI):
     yield  # Application runs here
 
     # --- Shutdown ----------------------------------------------------------
-    await async_engine.dispose()
+    if async_engine is not None:
+        await async_engine.dispose()
     logger.info("Shutting down LexSolv AI backend")
 
 
@@ -166,13 +174,14 @@ async def reset():
 @app.get("/health", tags=["System"])
 async def health_check():
     # Quick DB connectivity check
-    db_status = "unknown"
-    try:
-        async with async_engine.connect() as conn:
-            await conn.execute(sa.text("SELECT 1"))
-        db_status = "connected"
-    except Exception:
-        db_status = "unavailable"
+    db_status = "not configured"
+    if async_engine is not None:
+        try:
+            async with async_engine.connect() as conn:
+                await conn.execute(sa.text("SELECT 1"))
+            db_status = "connected"
+        except Exception:
+            db_status = "unavailable"
 
     return {
         "status": "ok",
