@@ -1,2 +1,25 @@
-fastapi
-uvicorn
+# LexSolv AI — Backend dependencies
+# Install: pip install -r requirements.txt
+
+# Web framework
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+
+# Data validation
+pydantic>=2.10.0
+
+# HTTP client (for OAuth2 token exchange & API calls)
+httpx>=0.28.0
+
+# Xero SDK
+xero-python>=6.1.0
+
+# MYOB (no official SDK — use httpx directly)
+# See: https://developer.myob.com/api/accountright/v2/
+
+# Security
+python-jose[cryptography]>=3.3.0
+python-multipart>=0.0.18
+
+# Environment variable management
+python-dotenv>=1.0.1
