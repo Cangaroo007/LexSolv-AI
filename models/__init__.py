@@ -1,7 +1,11 @@
 from .schemas import (
+    AppointmentType,
     CompanyData,
     CreditorList,
     CreditorEntry,
+    DIRRIRequest,
+    DocumentResponse,
+    FirmProfile,
     ForensicReport,
     PreferencePaymentFlag,
     PreferencePaymentReport,
@@ -13,9 +17,13 @@ from .schemas import (
 )
 
 __all__ = [
+    "AppointmentType",
     "CompanyData",
     "CreditorList",
     "CreditorEntry",
+    "DIRRIRequest",
+    "DocumentResponse",
+    "FirmProfile",
     "ForensicReport",
     "PreferencePaymentFlag",
     "PreferencePaymentReport",

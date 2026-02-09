@@ -27,6 +27,9 @@ from integrations.myob_client import MYOBClient, MYOBTokenSet
 from models.schemas import (
     CompanyData,
     CreditorList,
+    DIRRIRequest,
+    DocumentResponse,
+    FirmProfile,
     ForensicReport,
     PreferencePaymentReport,
     RelatedPartyReport,
@@ -35,6 +38,7 @@ from models.schemas import (
 )
 from db.database import async_engine, Base, get_db
 from services.forensic_engine import ForensicAnalyzer
+from services.document_generator import DocumentGenerator
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -563,6 +567,81 @@ async def forensic_solvency_score(req: SolvencyRequest):
         current_assets=req.current_assets,
         current_liabilities=req.current_liabilities,
     )
+
+
+# ===================================================================
+# Document Generation endpoints
+# ===================================================================
+
+document_generator = DocumentGenerator()
+
+
+class SafeHarbourRequest(BaseModel):
+    """Request body for generating a Safe Harbour assessment checklist."""
+
+    firm_profile: FirmProfile
+    company: CompanyData
+    assessment_date: Optional[date] = None
+
+
+@app.post(
+    "/api/documents/dirri",
+    response_model=DocumentResponse,
+    tags=["Documents"],
+    summary="Generate a DIRRI document",
+)
+async def generate_dirri(req: DIRRIRequest):
+    """
+    Generate a draft Declaration of Independence, Relevant Relationships
+    and Indemnities (DIRRI) report in .docx format.
+
+    The document follows the ARITA standard template and includes
+    review/sign-off placeholders for the Registered Liquidator.
+    """
+    from datetime import datetime as dt
+
+    filepath = document_generator.generate_dirri(req)
+    return DocumentResponse(
+        filename=filepath.name,
+        document_type="DIRRI",
+        download_url=f"/documents/{filepath.name}",
+        generated_at=dt.utcnow(),
+        company_name=req.company.legal_name,
+        practitioner_name=req.firm_profile.practitioner_name,
+    )
+
+
+@app.post(
+    "/api/documents/safe-harbour",
+    response_model=DocumentResponse,
+    tags=["Documents"],
+    summary="Generate a Safe Harbour assessment checklist",
+)
+async def generate_safe_harbour(req: SafeHarbourRequest):
+    """
+    Generate a Safe Harbour (Section 588GA) assessment checklist
+    in .docx format. Includes a table of conditions and recommendation
+    placeholders.
+    """
+    from datetime import datetime as dt
+
+    filepath = document_generator.generate_safe_harbour_checklist(
+        firm=req.firm_profile,
+        company=req.company,
+        assessment_date=req.assessment_date,
+    )
+    return DocumentResponse(
+        filename=filepath.name,
+        document_type="Safe Harbour Assessment",
+        download_url=f"/documents/{filepath.name}",
+        generated_at=dt.utcnow(),
+        company_name=req.company.legal_name,
+        practitioner_name=req.firm_profile.practitioner_name,
+    )
+
+
+# Serve generated documents
+app.mount("/documents", StaticFiles(directory="generated_documents"), name="documents")
 
 
 # ===================================================================

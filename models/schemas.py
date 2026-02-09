@@ -297,3 +297,113 @@ class ForensicReport(BaseModel):
     overall_risk: RiskLevel
     alert_count: int
     summary: str = Field(..., description="Top-level summary for the dashboard header")
+
+
+# ---------------------------------------------------------------------------
+# Firm Profile & Document Generation — schemas
+# ---------------------------------------------------------------------------
+
+class AppointmentType(str, Enum):
+    """Type of insolvency appointment."""
+    VOLUNTARY_ADMINISTRATION = "voluntary_administration"
+    CREDITORS_VOLUNTARY_LIQUIDATION = "creditors_voluntary_liquidation"
+    COURT_LIQUIDATION = "court_liquidation"
+    RECEIVERSHIP = "receivership"
+    SMALL_BUSINESS_RESTRUCTURING = "small_business_restructuring"
+    DEED_OF_COMPANY_ARRANGEMENT = "deed_of_company_arrangement"
+
+
+class FirmProfile(BaseModel):
+    """
+    Profile of the insolvency practitioner's firm.  Used to populate
+    statutory documents such as the DIRRI.
+    """
+
+    firm_name: str = Field(..., min_length=1, description="Registered firm / practice name")
+    practitioner_name: str = Field(..., min_length=1, description="Full name of the Registered Liquidator / practitioner")
+    practitioner_registration_number: Optional[str] = Field(None, description="ASIC registered liquidator number")
+    firm_abn: Optional[str] = Field(None, pattern=r"^\d{11}$", description="Firm ABN")
+    firm_address: Optional[str] = None
+    firm_phone: Optional[str] = None
+    firm_email: Optional[str] = None
+    firm_website: Optional[str] = None
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "firm_name": "Smith & Co Insolvency",
+                "practitioner_name": "John Smith",
+                "practitioner_registration_number": "123456",
+                "firm_abn": "98765432100",
+                "firm_address": "Level 10, 100 Collins Street, Melbourne VIC 3000",
+                "firm_phone": "(03) 9000 1234",
+                "firm_email": "john@smithinsolvency.com.au",
+                "firm_website": "www.smithinsolvency.com.au",
+            }
+        }
+
+
+class DIRRIRequest(BaseModel):
+    """Request body for generating a DIRRI document."""
+
+    firm_profile: FirmProfile
+    company: CompanyData
+    appointment_type: AppointmentType = AppointmentType.VOLUNTARY_ADMINISTRATION
+    appointment_date: date = Field(..., description="Date of the appointment")
+    appointing_body: str = Field(
+        default="the director(s) of the Company",
+        description="Who made the appointment, e.g. 'the director(s)', 'the Court', 'creditors'"
+    )
+
+    # Prior relationships
+    prior_professional_relationship: bool = Field(
+        default=False,
+        description="Whether the practitioner had a prior professional relationship with the company"
+    )
+    prior_relationship_details: Optional[str] = Field(
+        None,
+        description="Details of the prior relationship, if any"
+    )
+
+    # Relevant relationships
+    relevant_relationships: list[str] = Field(
+        default_factory=list,
+        description="List of any relevant relationships or dealings with the company, directors, or creditors"
+    )
+
+    # Indemnities
+    indemnities_received: bool = Field(
+        default=False,
+        description="Whether any indemnity has been received or is expected"
+    )
+    indemnity_details: Optional[str] = Field(
+        None,
+        description="Details of any indemnity received or expected"
+    )
+
+    # Up-front payments
+    upfront_payments_received: bool = Field(
+        default=False,
+        description="Whether any up-front payment has been received"
+    )
+    upfront_payment_details: Optional[str] = Field(
+        None,
+        description="Details of any up-front payments"
+    )
+
+    # Additional notes for the practitioner
+    additional_notes: Optional[str] = Field(
+        None,
+        description="Any additional disclosures or notes"
+    )
+
+
+class DocumentResponse(BaseModel):
+    """Response containing the generated document metadata."""
+
+    filename: str
+    document_type: str = Field(..., description="E.g. 'DIRRI', 'Safe Harbour Assessment'")
+    download_url: str = Field(..., description="Relative URL to download the generated document")
+    generated_at: datetime
+    company_name: str
+    practitioner_name: str
