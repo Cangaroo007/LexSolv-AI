@@ -119,7 +119,7 @@ class ForensicAnalyzer:
                 continue
 
             # Calculate days before insolvency
-            days_before = (insolvency_date - txn.date).days
+            days_before = (insolvency_date - txn.transaction_date).days
             if days_before < 0 or days_before > threshold_days:
                 continue
 
@@ -152,7 +152,7 @@ class ForensicAnalyzer:
                 PreferencePaymentFlag(
                     transaction_id=txn.id,
                     reference=txn.reference,
-                    date=txn.date,
+                    transaction_date=txn.transaction_date,
                     amount=txn.amount,
                     contact_name=txn.contact_name,
                     description=txn.description,
@@ -581,13 +581,13 @@ class ForensicAnalyzer:
         field_value = txn.contact_name if match_field == "contact_name" else txn.description
         reason = (
             f"Transaction {match_field} '{field_value}' matches director/related-party "
-            f"'{matched_director}' — ${txn.amount:,.2f} on {txn.date.isoformat()}"
+            f"'{matched_director}' — ${txn.amount:,.2f} on {txn.transaction_date.isoformat()}"
         )
 
         return RelatedPartyFlag(
             transaction_id=txn.id,
             reference=txn.reference,
-            date=txn.date,
+            transaction_date=txn.transaction_date,
             amount=txn.amount,
             contact_name=txn.contact_name,
             description=txn.description,

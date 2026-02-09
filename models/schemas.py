@@ -175,7 +175,7 @@ class Transaction(BaseModel):
     reference: Optional[str] = Field(None, description="Invoice number, journal ref, etc.")
     description: Optional[str] = None
 
-    date: date = Field(..., description="Transaction date")
+    transaction_date: date = Field(..., description="Transaction date")
     due_date: Optional[date] = None
 
     amount: Decimal = Field(..., description="Gross amount (positive)")
@@ -198,7 +198,7 @@ class Transaction(BaseModel):
                 "transaction_type": "invoice",
                 "status": "authorised",
                 "reference": "INV-0042",
-                "date": "2026-01-15",
+                "transaction_date": "2026-01-15",
                 "due_date": "2026-02-15",
                 "amount": "12500.00",
                 "tax_amount": "1136.36",
@@ -228,7 +228,7 @@ class PreferencePaymentFlag(BaseModel):
 
     transaction_id: UUID
     reference: Optional[str] = None
-    date: date
+    transaction_date: date
     amount: Decimal
     contact_name: Optional[str] = None
     description: Optional[str] = None
@@ -253,7 +253,7 @@ class RelatedPartyFlag(BaseModel):
 
     transaction_id: UUID
     reference: Optional[str] = None
-    date: date
+    transaction_date: date
     amount: Decimal
     contact_name: Optional[str] = None
     description: Optional[str] = None
