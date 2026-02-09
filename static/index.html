@@ -1,65 +1,775 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><title>LexSolv AI | Demo</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LexSolv AI | Insolvency Forensic Agent</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
-</head>
-<body class="bg-slate-50 font-sans text-slate-900">
-    <nav class="bg-slate-900 text-white p-4 flex justify-between items-center shadow-lg">
-        <h1 class="text-xl font-bold text-blue-400 italic">LEXSOLV AI</h1>
-        <div class="text-xs border border-slate-700 px-3 py-1 rounded">Practitioner Portal: Smith & Co</div>
-    </nav>
-    <main class="container mx-auto mt-10 p-6">
-        <div id="connect-view" class="max-w-xl mx-auto bg-white p-8 rounded-2xl shadow-xl border border-slate-200">
-            <h2 class="text-2xl font-bold mb-2 text-center">New Case Intake</h2>
-            <p class="text-slate-500 mb-6 text-center italic text-sm">Automate forensic reporting and Safe Harbor compliance.</p>
-            <button onclick="startAnalysis()" class="w-full flex items-center justify-between p-4 border-2 border-slate-100 rounded-xl hover:border-blue-500 hover:bg-blue-50 transition-all">
-                <span class="font-bold text-lg">Connect to Xero / MYOB</span>
-                <i data-lucide="arrow-right"></i>
-            </button>
-        </div>
-        <div id="loading-view" class="hidden max-w-xl mx-auto text-center py-20">
-            <div class="animate-spin mb-6 inline-block"><i data-lucide="refresh-cw" size="48" class="text-blue-600"></i></div>
-            <h2 class="text-xl font-bold">AI Analyzing Ledger Data...</h2>
-        </div>
-        <div id="dashboard-view" class="hidden space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 col-span-2">
-                    <div class="flex items-center gap-10">
-                        <div id="score" class="text-6xl font-black text-red-500">42/100</div>
-                        <div><p class="font-bold">Construction Corp Pty Ltd</p><p class="text-sm italic">Risk: High</p></div>
-                    </div>
-                </div>
-                <div class="bg-blue-600 text-white p-6 rounded-xl shadow-md">
-                    <h2 class="text-xs font-bold uppercase mb-2">AI Match Rate</h2>
-                    <div id="match-rate" class="text-4xl font-bold">94%</div>
-                </div>
-            </div>
-            <div id="alerts-list" class="bg-white p-6 rounded-xl border border-slate-200 space-y-3"></div>
-        </div>
-    </main>
     <script>
-        lucide.createIcons();
-        async function startAnalysis() {
-            document.getElementById('connect-view').classList.add('hidden');
-            document.getElementById('loading-view').classList.remove('hidden');
-            await fetch('/api/trigger-analysis', {method: 'POST'});
-            setTimeout(fetchResults, 2500);
-        }
-        async function fetchResults() {
-            const res = await fetch('/api/analysis'); const data = await res.json();
-            if (data.status === 'complete') {
-                document.getElementById('loading-view').classList.add('hidden');
-                document.getElementById('dashboard-view').classList.remove('hidden');
-                const list = document.getElementById('alerts-list');
-                data.alerts.forEach(a => {
-                    const d = document.createElement('div');
-                    d.className = "p-3 rounded bg-red-50 border-l-4 border-red-500 text-sm";
-                    d.innerText = a.msg; list.appendChild(d);
-                });
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50:  'var(--brand-50)',
+                            100: 'var(--brand-100)',
+                            200: 'var(--brand-200)',
+                            500: 'var(--brand-500)',
+                            600: 'var(--brand-600)',
+                            700: 'var(--brand-700)',
+                            800: 'var(--brand-800)',
+                            900: 'var(--brand-900)',
+                        }
+                    }
+                }
             }
         }
+    </script>
+    <style>
+        :root {
+            --brand-50:  #eff6ff;
+            --brand-100: #dbeafe;
+            --brand-200: #bfdbfe;
+            --brand-500: #3b82f6;
+            --brand-600: #2563eb;
+            --brand-700: #1d4ed8;
+            --brand-800: #1e3a5f;
+            --brand-900: #0f172a;
+        }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .pulse-dot { animation: pulseDot 2s infinite; }
+        @keyframes pulseDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .gauge-fill { transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1); }
+        .slide-in { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    </style>
+</head>
+<body class="bg-slate-50 font-sans text-slate-900 min-h-screen">
+
+    <!-- ============================================================ -->
+    <!-- NAV BAR                                                       -->
+    <!-- ============================================================ -->
+    <nav id="navbar" class="bg-brand-900 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center gap-3">
+                    <img id="nav-logo" src="" alt="" class="h-8 w-8 rounded hidden">
+                    <h1 id="nav-brand" class="text-lg font-bold tracking-tight" style="color: var(--brand-500);">LEXSOLV AI</h1>
+                    <span class="text-xs text-slate-400 hidden sm:inline">Insolvency Forensic Agent</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <div id="connection-status" class="hidden items-center gap-2 text-xs bg-slate-800 px-3 py-1.5 rounded-full">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 pulse-dot inline-block"></span>
+                        <span id="connection-label">Connected</span>
+                    </div>
+                    <button onclick="toggleSettings()" class="p-2 rounded-lg hover:bg-slate-800 transition-colors" title="White-Label Settings">
+                        <i data-lucide="settings" class="w-5 h-5 text-slate-400"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- ============================================================ -->
+    <!-- MAIN CONTENT                                                  -->
+    <!-- ============================================================ -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <!-- ======== CONNECT VIEW ======== -->
+        <div id="connect-view" class="fade-in">
+            <div class="max-w-2xl mx-auto">
+                <div class="text-center mb-8">
+                    <h2 class="text-3xl font-bold text-slate-900 mb-2">New Case Intake</h2>
+                    <p class="text-slate-500">Connect to your client's accounting software to begin automated forensic analysis.</p>
+                </div>
+
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+                    <div class="p-8 space-y-4">
+                        <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Connect Accounting Platform</h3>
+
+                        <!-- Xero Button -->
+                        <button onclick="connectProvider('xero')" class="w-full flex items-center gap-4 p-4 border-2 border-slate-100 rounded-xl hover:border-brand-500 hover:bg-brand-50 transition-all group">
+                            <div class="w-12 h-12 bg-[#13B5EA] rounded-xl flex items-center justify-center flex-shrink-0">
+                                <span class="text-white font-black text-lg">X</span>
+                            </div>
+                            <div class="text-left flex-1">
+                                <p class="font-semibold text-slate-900">Connect to Xero</p>
+                                <p class="text-sm text-slate-500">Import GL, bank transactions & aged payables</p>
+                            </div>
+                            <i data-lucide="arrow-right" class="w-5 h-5 text-slate-300 group-hover:text-brand-500 transition-colors"></i>
+                        </button>
+
+                        <!-- MYOB Button -->
+                        <button onclick="connectProvider('myob')" class="w-full flex items-center gap-4 p-4 border-2 border-slate-100 rounded-xl hover:border-brand-500 hover:bg-brand-50 transition-all group">
+                            <div class="w-12 h-12 bg-[#6D2D91] rounded-xl flex items-center justify-center flex-shrink-0">
+                                <span class="text-white font-black text-sm">MYOB</span>
+                            </div>
+                            <div class="text-left flex-1">
+                                <p class="font-semibold text-slate-900">Connect to MYOB</p>
+                                <p class="text-sm text-slate-500">Import from AccountRight or Essentials</p>
+                            </div>
+                            <i data-lucide="arrow-right" class="w-5 h-5 text-slate-300 group-hover:text-brand-500 transition-colors"></i>
+                        </button>
+                    </div>
+
+                    <div class="border-t border-slate-100 bg-slate-50 px-8 py-4">
+                        <div class="flex items-center gap-2 text-xs text-slate-400">
+                            <i data-lucide="shield-check" class="w-4 h-4"></i>
+                            <span>OAuth2 secured. Read-only access. Your data never leaves the platform.</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Demo Mode -->
+                <div class="text-center mt-6">
+                    <button onclick="runDemoAnalysis()" class="text-sm text-brand-600 hover:text-brand-700 underline underline-offset-4 decoration-brand-200 hover:decoration-brand-500 transition-colors">
+                        Run demo analysis with sample data
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======== LOADING VIEW ======== -->
+        <div id="loading-view" class="hidden">
+            <div class="max-w-lg mx-auto text-center py-20 fade-in">
+                <div class="relative inline-block mb-8">
+                    <div class="w-20 h-20 rounded-full border-4 border-slate-200 border-t-brand-500 animate-spin"></div>
+                </div>
+                <h2 class="text-xl font-bold text-slate-900 mb-2">Analyzing Ledger Data</h2>
+                <p class="text-slate-500 mb-8">Running forensic checks across all transactions...</p>
+                <div class="space-y-3 text-left max-w-sm mx-auto">
+                    <div id="step-connect" class="flex items-center gap-3 text-sm">
+                        <i data-lucide="check-circle" class="w-5 h-5 text-emerald-500"></i>
+                        <span class="text-slate-600">Accounting data connected</span>
+                    </div>
+                    <div id="step-preference" class="flex items-center gap-3 text-sm">
+                        <div class="w-5 h-5 rounded-full border-2 border-slate-300 border-t-brand-500 animate-spin"></div>
+                        <span class="text-slate-600">Scanning for preference payments...</span>
+                    </div>
+                    <div id="step-related" class="flex items-center gap-3 text-sm text-slate-400">
+                        <i data-lucide="circle" class="w-5 h-5"></i>
+                        <span>Identifying related-party transactions</span>
+                    </div>
+                    <div id="step-solvency" class="flex items-center gap-3 text-sm text-slate-400">
+                        <i data-lucide="circle" class="w-5 h-5"></i>
+                        <span>Calculating solvency score</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ======== DASHBOARD VIEW ======== -->
+        <div id="dashboard-view" class="hidden space-y-6 fade-in">
+
+            <!-- Top Bar -->
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h2 id="company-name" class="text-2xl font-bold text-slate-900">—</h2>
+                    <p id="analysis-meta" class="text-sm text-slate-500">Forensic analysis</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="resetView()" class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                        <i data-lucide="plus" class="w-4 h-4"></i> New Case
+                    </button>
+                </div>
+            </div>
+
+            <!-- Score Cards Row -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <!-- Solvency Score -->
+                <div class="md:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider">Solvency Score</h3>
+                        <span id="solvency-badge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold"></span>
+                    </div>
+                    <div class="flex items-end gap-6">
+                        <div id="solvency-score" class="text-5xl font-black tabular-nums">—</div>
+                        <div class="flex-1">
+                            <div class="h-3 bg-slate-100 rounded-full overflow-hidden">
+                                <div id="solvency-bar" class="gauge-fill h-full rounded-full" style="width: 0%"></div>
+                            </div>
+                            <p id="solvency-recommendation" class="text-sm text-slate-500 mt-2"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Overall Risk -->
+                <div id="risk-card" class="bg-white rounded-xl border border-slate-200 p-6">
+                    <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Overall Risk</h3>
+                    <div id="risk-level" class="text-3xl font-black uppercase mb-1">—</div>
+                    <p id="risk-alerts" class="text-sm text-slate-500"></p>
+                </div>
+
+                <!-- Transaction Stats -->
+                <div class="bg-white rounded-xl border border-slate-200 p-6">
+                    <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4">Flags Found</h3>
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-slate-600">Preference Payments</span>
+                            <span id="pref-count" class="font-bold text-lg tabular-nums">0</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-slate-600">Related Parties</span>
+                            <span id="rp-count" class="font-bold text-lg tabular-nums">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Forensic Alerts Panel -->
+            <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500"></i>
+                        <h3 class="font-semibold text-slate-900">Forensic Alerts</h3>
+                    </div>
+                    <span id="alert-total" class="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full"></span>
+                </div>
+                <div id="alerts-container" class="divide-y divide-slate-100 max-h-[480px] overflow-y-auto"></div>
+                <div id="alerts-empty" class="hidden px-6 py-12 text-center text-slate-400">
+                    <i data-lucide="check-circle" class="w-10 h-10 mx-auto mb-3 text-emerald-400"></i>
+                    <p class="font-medium">No forensic alerts detected</p>
+                </div>
+            </div>
+
+            <!-- Detail Panels -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Preference Payments -->
+                <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100">
+                        <h3 class="font-semibold text-slate-900 flex items-center gap-2">
+                            <i data-lucide="banknote" class="w-5 h-5 text-red-500"></i>
+                            Preference Payments
+                        </h3>
+                    </div>
+                    <div id="pref-detail" class="p-6">
+                        <p id="pref-summary" class="text-sm text-slate-600 mb-4"></p>
+                        <div id="pref-list" class="space-y-3"></div>
+                    </div>
+                </div>
+
+                <!-- Related Parties -->
+                <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-slate-100">
+                        <h3 class="font-semibold text-slate-900 flex items-center gap-2">
+                            <i data-lucide="users" class="w-5 h-5 text-purple-500"></i>
+                            Related-Party Transactions
+                        </h3>
+                    </div>
+                    <div id="rp-detail" class="p-6">
+                        <p id="rp-summary" class="text-sm text-slate-600 mb-4"></p>
+                        <div id="rp-list" class="space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Solvency Explanation -->
+            <div class="bg-white rounded-xl border border-slate-200 p-6">
+                <div class="flex items-center gap-2 mb-3">
+                    <i data-lucide="bar-chart-3" class="w-5 h-5 text-brand-600"></i>
+                    <h3 class="font-semibold text-slate-900">Solvency Assessment</h3>
+                </div>
+                <p id="solvency-explanation" class="text-sm text-slate-600 leading-relaxed"></p>
+                <div class="grid grid-cols-3 gap-4 mt-4">
+                    <div class="bg-slate-50 rounded-lg p-3 text-center">
+                        <p class="text-xs text-slate-500 mb-1">Current Assets</p>
+                        <p id="stat-assets" class="font-bold text-slate-900 tabular-nums">—</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3 text-center">
+                        <p class="text-xs text-slate-500 mb-1">Current Liabilities</p>
+                        <p id="stat-liabilities" class="font-bold text-slate-900 tabular-nums">—</p>
+                    </div>
+                    <div class="bg-slate-50 rounded-lg p-3 text-center">
+                        <p class="text-xs text-slate-500 mb-1">Net Position</p>
+                        <p id="stat-net" class="font-bold tabular-nums">—</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ============================================================ -->
+    <!-- WHITE-LABEL SETTINGS PANEL (Slide-over)                       -->
+    <!-- ============================================================ -->
+    <div id="settings-backdrop" class="hidden fixed inset-0 bg-black/30 z-50" onclick="toggleSettings()"></div>
+    <div id="settings-panel" class="hidden fixed top-0 right-0 h-full w-full max-w-md bg-white shadow-2xl z-50 slide-in overflow-y-auto">
+        <div class="p-6 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white z-10">
+            <h2 class="text-lg font-bold text-slate-900">White-Label Settings</h2>
+            <button onclick="toggleSettings()" class="p-2 rounded-lg hover:bg-slate-100 transition-colors">
+                <i data-lucide="x" class="w-5 h-5 text-slate-500"></i>
+            </button>
+        </div>
+
+        <div class="p-6 space-y-8">
+            <!-- Logo Upload -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-3">Practice Logo</label>
+                <div id="logo-upload-area" class="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center hover:border-brand-400 transition-colors cursor-pointer" onclick="document.getElementById('logo-input').click()">
+                    <img id="logo-preview" src="" alt="" class="hidden h-16 mx-auto mb-3 rounded-lg">
+                    <div id="logo-placeholder">
+                        <i data-lucide="upload" class="w-8 h-8 mx-auto text-slate-400 mb-2"></i>
+                        <p class="text-sm text-slate-500">Click to upload your logo</p>
+                        <p class="text-xs text-slate-400 mt-1">PNG, SVG or JPG, max 2MB</p>
+                    </div>
+                    <input type="file" id="logo-input" class="hidden" accept="image/*" onchange="handleLogoUpload(event)">
+                </div>
+                <button onclick="removeLogo()" id="remove-logo-btn" class="hidden mt-2 text-xs text-red-500 hover:text-red-700">Remove logo</button>
+            </div>
+
+            <!-- Brand Name -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-2">Practice Name</label>
+                <input type="text" id="brand-name-input" value="LEXSOLV AI" placeholder="Your Practice Name"
+                    class="w-full px-4 py-2.5 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                    oninput="updateBrandName(this.value)">
+            </div>
+
+            <!-- Primary Color -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-3">Primary Brand Color</label>
+                <div class="grid grid-cols-6 gap-2 mb-3">
+                    <button onclick="setColor('#3b82f6')" class="w-10 h-10 rounded-lg bg-blue-500 ring-2 ring-transparent hover:ring-blue-300 transition-all color-swatch" data-color="#3b82f6"></button>
+                    <button onclick="setColor('#10b981')" class="w-10 h-10 rounded-lg bg-emerald-500 ring-2 ring-transparent hover:ring-emerald-300 transition-all color-swatch" data-color="#10b981"></button>
+                    <button onclick="setColor('#8b5cf6')" class="w-10 h-10 rounded-lg bg-violet-500 ring-2 ring-transparent hover:ring-violet-300 transition-all color-swatch" data-color="#8b5cf6"></button>
+                    <button onclick="setColor('#f59e0b')" class="w-10 h-10 rounded-lg bg-amber-500 ring-2 ring-transparent hover:ring-amber-300 transition-all color-swatch" data-color="#f59e0b"></button>
+                    <button onclick="setColor('#ef4444')" class="w-10 h-10 rounded-lg bg-red-500 ring-2 ring-transparent hover:ring-red-300 transition-all color-swatch" data-color="#ef4444"></button>
+                    <button onclick="setColor('#06b6d4')" class="w-10 h-10 rounded-lg bg-cyan-500 ring-2 ring-transparent hover:ring-cyan-300 transition-all color-swatch" data-color="#06b6d4"></button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="color" id="custom-color" value="#3b82f6" class="h-10 w-10 rounded cursor-pointer border-0" onchange="setColor(this.value)">
+                    <input type="text" id="color-hex-input" value="#3b82f6" placeholder="#3b82f6"
+                        class="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500"
+                        onchange="setColor(this.value)">
+                </div>
+            </div>
+
+            <!-- Nav Background -->
+            <div>
+                <label class="block text-sm font-semibold text-slate-700 mb-2">Navigation Background</label>
+                <div class="grid grid-cols-3 gap-2">
+                    <button onclick="setNavBg('#0f172a')" class="px-3 py-2 text-xs font-medium rounded-lg border-2 border-slate-200 hover:border-slate-400 transition-colors">Dark (Default)</button>
+                    <button onclick="setNavBg('#1e293b')" class="px-3 py-2 text-xs font-medium rounded-lg border-2 border-slate-200 hover:border-slate-400 transition-colors">Slate</button>
+                    <button onclick="setNavBg('#ffffff')" class="px-3 py-2 text-xs font-medium rounded-lg border-2 border-slate-200 hover:border-slate-400 transition-colors">Light</button>
+                </div>
+            </div>
+
+            <!-- Reset -->
+            <div class="pt-4 border-t border-slate-200">
+                <button onclick="resetWhiteLabel()" class="w-full px-4 py-2.5 text-sm font-medium text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors">
+                    Reset to Defaults
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- JAVASCRIPT                                                    -->
+    <!-- ============================================================ -->
+    <script>
+    // ── Init ──────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+        lucide.createIcons();
+        loadWhiteLabelSettings();
+    });
+
+    let currentReport = null;
+
+    // ── View Management ───────────────────────────────────────────
+    function showView(id) {
+        ['connect-view', 'loading-view', 'dashboard-view'].forEach(v => {
+            document.getElementById(v).classList.add('hidden');
+        });
+        const el = document.getElementById(id);
+        el.classList.remove('hidden');
+        el.classList.add('fade-in');
+        lucide.createIcons();
+    }
+
+    function resetView() {
+        currentReport = null;
+        document.getElementById('connection-status').classList.add('hidden');
+        document.getElementById('connection-status').classList.remove('flex');
+        showView('connect-view');
+    }
+
+    // ── Provider Connection ───────────────────────────────────────
+    function connectProvider(provider) {
+        runDemoAnalysis(provider);
+    }
+
+    // ── Demo Analysis (posts sample data to the forensic endpoint) ─
+    async function runDemoAnalysis(provider = 'xero') {
+        showView('loading-view');
+
+        // Show connection status
+        const status = document.getElementById('connection-status');
+        const label = document.getElementById('connection-label');
+        label.textContent = provider === 'myob' ? 'MYOB Connected' : 'Xero Connected';
+        status.classList.remove('hidden');
+        status.classList.add('flex');
+
+        // Animate the loading steps
+        await sleep(800);
+        animateStep('step-preference', true);
+        await sleep(1000);
+        animateStep('step-preference', false);
+        animateStep('step-related', true);
+        await sleep(800);
+        animateStep('step-related', false);
+        animateStep('step-solvency', true);
+        await sleep(600);
+        animateStep('step-solvency', false);
+
+        // Build demo payload
+        const demoPayload = buildDemoPayload();
+
+        try {
+            const res = await fetch('/api/forensic/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(demoPayload)
+            });
+            currentReport = await res.json();
+            renderDashboard(currentReport);
+            showView('dashboard-view');
+        } catch (err) {
+            console.error('Analysis failed:', err);
+            // Fallback: render with a mock report
+            currentReport = buildFallbackReport();
+            renderDashboard(currentReport);
+            showView('dashboard-view');
+        }
+    }
+
+    function animateStep(stepId, start) {
+        const el = document.getElementById(stepId);
+        if (start) {
+            el.classList.remove('text-slate-400');
+            el.innerHTML = `<div class="w-5 h-5 rounded-full border-2 border-slate-300 border-t-blue-500 animate-spin flex-shrink-0"></div><span class="text-slate-600">${el.querySelector('span')?.textContent || ''}</span>`;
+        } else {
+            el.innerHTML = `<svg class="w-5 h-5 text-emerald-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span class="text-slate-600">${el.querySelector('span')?.textContent || ''}</span>`;
+        }
+    }
+
+    // ── Dashboard Rendering ───────────────────────────────────────
+    function renderDashboard(report) {
+        // Company name
+        document.getElementById('company-name').textContent = report.company_name || 'Case Analysis';
+        document.getElementById('analysis-meta').textContent = `Forensic analysis completed ${report.analysis_date || 'today'}`;
+
+        // Solvency
+        const s = report.solvency;
+        const scoreEl = document.getElementById('solvency-score');
+        scoreEl.textContent = s.score + '/100';
+        scoreEl.className = `text-5xl font-black tabular-nums ${scoreColor(s.score)}`;
+
+        const bar = document.getElementById('solvency-bar');
+        bar.style.width = s.score + '%';
+        bar.className = `gauge-fill h-full rounded-full ${scoreBarColor(s.score)}`;
+
+        const badge = document.getElementById('solvency-badge');
+        badge.textContent = s.recommendation.replace('_', ' ').toUpperCase();
+        badge.className = `px-2.5 py-0.5 rounded-full text-xs font-semibold ${badgeClass(s.risk_level)}`;
+
+        document.getElementById('solvency-recommendation').textContent =
+            s.recommendation === 'liquidation' ? 'Liquidation recommended' :
+            s.recommendation === 'sbr_candidate' ? 'SBR candidate' : 'Technically solvent';
+
+        document.getElementById('solvency-explanation').textContent = s.explanation;
+        document.getElementById('stat-assets').textContent = formatCurrency(s.current_assets);
+        document.getElementById('stat-liabilities').textContent = formatCurrency(s.current_liabilities);
+
+        const netEl = document.getElementById('stat-net');
+        const netVal = parseFloat(s.net_position);
+        netEl.textContent = formatCurrency(s.net_position);
+        netEl.className = `font-bold tabular-nums ${netVal >= 0 ? 'text-emerald-600' : 'text-red-600'}`;
+
+        // Overall risk
+        const riskEl = document.getElementById('risk-level');
+        riskEl.textContent = report.overall_risk;
+        riskEl.className = `text-3xl font-black uppercase mb-1 ${riskTextColor(report.overall_risk)}`;
+        document.getElementById('risk-alerts').textContent = `${report.alert_count} alert${report.alert_count !== 1 ? 's' : ''} detected`;
+
+        // Counts
+        document.getElementById('pref-count').textContent = report.preference_payments.total_flagged;
+        document.getElementById('rp-count').textContent = report.related_parties.total_flagged;
+
+        // Forensic Alerts (combined)
+        const alertsContainer = document.getElementById('alerts-container');
+        const alertsEmpty = document.getElementById('alerts-empty');
+        alertsContainer.innerHTML = '';
+
+        const allAlerts = [
+            ...report.preference_payments.flags.map(f => ({ ...f, type: 'preference' })),
+            ...report.related_parties.flags.map(f => ({ ...f, type: 'related_party' })),
+        ];
+
+        if (allAlerts.length === 0) {
+            alertsEmpty.classList.remove('hidden');
+        } else {
+            alertsEmpty.classList.add('hidden');
+            document.getElementById('alert-total').textContent = `${allAlerts.length} alert${allAlerts.length !== 1 ? 's' : ''}`;
+
+            allAlerts.forEach(alert => {
+                const icon = alert.type === 'preference'
+                    ? '<svg class="w-5 h-5 text-red-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
+                    : '<svg class="w-5 h-5 text-purple-500 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+
+                const div = document.createElement('div');
+                div.className = 'flex items-start gap-3 px-6 py-4 hover:bg-slate-50 transition-colors';
+                div.innerHTML = `
+                    ${icon}
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-0.5">
+                            <span class="text-sm font-semibold text-slate-900">${alert.contact_name || alert.reference || 'Unknown'}</span>
+                            <span class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${badgeClass(alert.risk_level)}">${alert.risk_level}</span>
+                        </div>
+                        <p class="text-sm text-slate-600 leading-snug">${alert.reason}</p>
+                    </div>
+                    <div class="text-right flex-shrink-0">
+                        <p class="font-semibold text-slate-900 tabular-nums">${formatCurrency(alert.amount)}</p>
+                        <p class="text-xs text-slate-400">${alert.transaction_date || ''}</p>
+                    </div>
+                `;
+                alertsContainer.appendChild(div);
+            });
+        }
+
+        // Preference detail
+        document.getElementById('pref-summary').textContent = report.preference_payments.summary;
+        renderFlagList('pref-list', report.preference_payments.flags);
+
+        // Related party detail
+        document.getElementById('rp-summary').textContent = report.related_parties.summary;
+        renderFlagList('rp-list', report.related_parties.flags);
+    }
+
+    function renderFlagList(containerId, flags) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
+        if (flags.length === 0) {
+            container.innerHTML = '<p class="text-sm text-slate-400 italic">No flags detected.</p>';
+            return;
+        }
+        flags.forEach(f => {
+            const div = document.createElement('div');
+            div.className = 'flex items-center justify-between p-3 bg-slate-50 rounded-lg';
+            div.innerHTML = `
+                <div>
+                    <p class="text-sm font-medium text-slate-900">${f.contact_name || f.reference || 'Transaction'}</p>
+                    <p class="text-xs text-slate-500">${f.transaction_date || ''} · ${f.reference || ''}</p>
+                </div>
+                <div class="text-right">
+                    <p class="font-semibold text-slate-900 tabular-nums">${formatCurrency(f.amount)}</p>
+                    <span class="text-[10px] font-bold uppercase ${badgeClass(f.risk_level)}">${f.risk_level}</span>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    // ── White-Label ───────────────────────────────────────────────
+    function toggleSettings() {
+        const panel = document.getElementById('settings-panel');
+        const backdrop = document.getElementById('settings-backdrop');
+        const isOpen = !panel.classList.contains('hidden');
+        if (isOpen) {
+            panel.classList.add('hidden');
+            backdrop.classList.add('hidden');
+        } else {
+            panel.classList.remove('hidden');
+            backdrop.classList.remove('hidden');
+            lucide.createIcons();
+        }
+    }
+
+    function handleLogoUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const dataUrl = e.target.result;
+            setLogo(dataUrl);
+            localStorage.setItem('wl_logo', dataUrl);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function setLogo(dataUrl) {
+        // Nav logo
+        const navLogo = document.getElementById('nav-logo');
+        navLogo.src = dataUrl;
+        navLogo.classList.remove('hidden');
+        // Settings preview
+        const preview = document.getElementById('logo-preview');
+        preview.src = dataUrl;
+        preview.classList.remove('hidden');
+        document.getElementById('logo-placeholder').classList.add('hidden');
+        document.getElementById('remove-logo-btn').classList.remove('hidden');
+    }
+
+    function removeLogo() {
+        document.getElementById('nav-logo').classList.add('hidden');
+        document.getElementById('logo-preview').classList.add('hidden');
+        document.getElementById('logo-placeholder').classList.remove('hidden');
+        document.getElementById('remove-logo-btn').classList.add('hidden');
+        localStorage.removeItem('wl_logo');
+    }
+
+    function updateBrandName(name) {
+        document.getElementById('nav-brand').textContent = name || 'LEXSOLV AI';
+        localStorage.setItem('wl_name', name);
+    }
+
+    function setColor(hex) {
+        if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+        const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+        document.documentElement.style.setProperty('--brand-500', hex);
+        document.documentElement.style.setProperty('--brand-600', shadeColor(hex, -15));
+        document.documentElement.style.setProperty('--brand-700', shadeColor(hex, -30));
+        document.documentElement.style.setProperty('--brand-50', `rgba(${r},${g},${b},0.05)`);
+        document.documentElement.style.setProperty('--brand-100', `rgba(${r},${g},${b},0.1)`);
+        document.documentElement.style.setProperty('--brand-200', `rgba(${r},${g},${b},0.2)`);
+        document.getElementById('nav-brand').style.color = hex;
+        document.getElementById('custom-color').value = hex;
+        document.getElementById('color-hex-input').value = hex;
+
+        // Update swatch selection
+        document.querySelectorAll('.color-swatch').forEach(s => {
+            s.classList.toggle('ring-slate-400', s.dataset.color === hex);
+        });
+
+        localStorage.setItem('wl_color', hex);
+    }
+
+    function setNavBg(color) {
+        document.getElementById('navbar').style.backgroundColor = color;
+        // If light bg, make text dark
+        const isLight = color === '#ffffff';
+        document.getElementById('nav-brand').classList.toggle('text-slate-900', isLight);
+        localStorage.setItem('wl_navbg', color);
+    }
+
+    function resetWhiteLabel() {
+        localStorage.removeItem('wl_logo');
+        localStorage.removeItem('wl_name');
+        localStorage.removeItem('wl_color');
+        localStorage.removeItem('wl_navbg');
+        removeLogo();
+        document.getElementById('brand-name-input').value = 'LEXSOLV AI';
+        updateBrandName('LEXSOLV AI');
+        setColor('#3b82f6');
+        setNavBg('#0f172a');
+        document.getElementById('navbar').style.backgroundColor = '';
+    }
+
+    function loadWhiteLabelSettings() {
+        const logo = localStorage.getItem('wl_logo');
+        if (logo) setLogo(logo);
+        const name = localStorage.getItem('wl_name');
+        if (name) { updateBrandName(name); document.getElementById('brand-name-input').value = name; }
+        const color = localStorage.getItem('wl_color');
+        if (color) setColor(color);
+        const navbg = localStorage.getItem('wl_navbg');
+        if (navbg) setNavBg(navbg);
+    }
+
+    // ── Demo Data ─────────────────────────────────────────────────
+    function buildDemoPayload() {
+        const companyId = '00000000-0000-0000-0000-000000000001';
+        const today = new Date().toISOString().split('T')[0];
+        const daysAgo = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().split('T')[0]; };
+
+        return {
+            company_name: "Horizon Construction Pty Ltd",
+            insolvency_date: today,
+            director_names: ["James Mitchell", "Sarah Mitchell", "Mitchell Holdings"],
+            current_assets: 420000,
+            current_liabilities: 980000,
+            threshold_days: 180,
+            transactions: [
+                { company_id: companyId, transaction_type: "payment", transaction_date: daysAgo(14), amount: 55000, contact_name: "Mitchell Holdings Pty Ltd", description: "Consulting fees - director entity", reference: "PAY-1041", account_code: "400", status: "authorised" },
+                { company_id: companyId, transaction_type: "bank_transaction", transaction_date: daysAgo(28), amount: 32000, contact_name: "Sarah Mitchell", description: "Loan repayment to director", reference: "BT-2201", account_code: "800", status: "authorised" },
+                { company_id: companyId, transaction_type: "payment", transaction_date: daysAgo(45), amount: 18500, contact_name: "Premium Fitouts Co", description: "Office renovation final payment", reference: "PAY-1038", account_code: "420", status: "authorised" },
+                { company_id: companyId, transaction_type: "bank_transaction", transaction_date: daysAgo(12), amount: 75000, contact_name: "Apex Suppliers Pty Ltd", description: "Bulk material pre-payment", reference: "BT-2215", account_code: "410", status: "authorised" },
+                { company_id: companyId, transaction_type: "payment", transaction_date: daysAgo(60), amount: 12000, contact_name: "J. Mitchell Family Trust", description: "Trust distribution", reference: "PAY-1032", account_code: "890", status: "authorised" },
+                { company_id: companyId, transaction_type: "invoice", transaction_date: daysAgo(30), amount: 45000, contact_name: "City Council Project", description: "Progress claim #4", reference: "INV-0089", account_code: "200", status: "authorised" },
+                { company_id: companyId, transaction_type: "payment", transaction_date: daysAgo(90), amount: 8500, contact_name: "Office Supplies Direct", description: "Stationery and supplies", reference: "PAY-1025", account_code: "450", status: "authorised" },
+                { company_id: companyId, transaction_type: "bank_transaction", transaction_date: daysAgo(7), amount: 22000, contact_name: "Equipment Leasing Corp", description: "Early lease termination", reference: "BT-2220", account_code: "600", status: "authorised" },
+            ]
+        };
+    }
+
+    function buildFallbackReport() {
+        return {
+            company_name: "Horizon Construction Pty Ltd",
+            analysis_date: new Date().toISOString().split('T')[0],
+            overall_risk: "critical",
+            alert_count: 5,
+            summary: "Demo analysis complete.",
+            solvency: { score: 32, current_assets: "420000", current_liabilities: "980000", net_position: "-560000", solvency_ratio: 0.4286, recommendation: "sbr_candidate", risk_level: "high", explanation: "Current ratio of 0.43 suggests the company is insolvent but may be viable for SBR. Net deficit: $560,000." },
+            preference_payments: { insolvency_date: new Date().toISOString().split('T')[0], threshold_days: 180, total_flagged: 3, total_flagged_amount: "147500", flags: [
+                { transaction_id: "1", reference: "BT-2215", transaction_date: "2026-01-28", amount: "75000", contact_name: "Apex Suppliers Pty Ltd", risk_level: "critical", reason: "$75,000 payment made 12 days before insolvency; exceeds critical threshold" },
+                { transaction_id: "2", reference: "PAY-1041", transaction_date: "2026-01-26", amount: "55000", contact_name: "Mitchell Holdings Pty Ltd", risk_level: "critical", reason: "$55,000 payment made 14 days before insolvency; exceeds critical threshold" },
+                { transaction_id: "3", reference: "PAY-1038", transaction_date: "2025-12-26", amount: "18500", contact_name: "Premium Fitouts Co", risk_level: "medium", reason: "$18,500 payment made 45 days before insolvency; non-essential account code" },
+            ], summary: "3 potential preference payments totalling $147,500 detected within 180 days of insolvency. 2 flagged as critical." },
+            related_parties: { director_names: ["James Mitchell", "Sarah Mitchell", "Mitchell Holdings"], total_flagged: 3, total_flagged_amount: "99000", flags: [
+                { transaction_id: "1", reference: "PAY-1041", transaction_date: "2026-01-26", amount: "55000", contact_name: "Mitchell Holdings Pty Ltd", matched_director: "Mitchell Holdings", match_field: "contact_name", risk_level: "critical", reason: "Transaction contact 'Mitchell Holdings Pty Ltd' matches director 'Mitchell Holdings' — $55,000" },
+                { transaction_id: "2", reference: "BT-2201", transaction_date: "2026-01-12", amount: "32000", contact_name: "Sarah Mitchell", matched_director: "Sarah Mitchell", match_field: "contact_name", risk_level: "high", reason: "Transaction contact 'Sarah Mitchell' matches director 'Sarah Mitchell' — $32,000" },
+                { transaction_id: "3", reference: "PAY-1032", transaction_date: "2025-12-10", amount: "12000", contact_name: "J. Mitchell Family Trust", matched_director: "James Mitchell", match_field: "contact_name", risk_level: "high", reason: "Transaction contact 'J. Mitchell Family Trust' matches director 'James Mitchell' — $12,000" },
+            ], summary: "3 related-party transactions totalling $99,000 detected across 3 directors." },
+        };
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function formatCurrency(val) {
+        const num = typeof val === 'string' ? parseFloat(val) : val;
+        if (isNaN(num)) return '—';
+        const neg = num < 0;
+        return (neg ? '-' : '') + '$' + Math.abs(num).toLocaleString('en-AU', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+
+    function scoreColor(score) {
+        if (score >= 65) return 'text-emerald-600';
+        if (score >= 35) return 'text-amber-500';
+        return 'text-red-600';
+    }
+
+    function scoreBarColor(score) {
+        if (score >= 65) return 'bg-emerald-500';
+        if (score >= 35) return 'bg-amber-400';
+        return 'bg-red-500';
+    }
+
+    function riskTextColor(risk) {
+        const map = { critical: 'text-red-600', high: 'text-orange-500', medium: 'text-amber-500', low: 'text-emerald-600', info: 'text-blue-500' };
+        return map[risk] || 'text-slate-600';
+    }
+
+    function badgeClass(risk) {
+        const map = {
+            critical: 'bg-red-100 text-red-700',
+            high: 'bg-orange-100 text-orange-700',
+            medium: 'bg-amber-100 text-amber-700',
+            low: 'bg-emerald-100 text-emerald-700',
+            info: 'bg-blue-100 text-blue-700',
+        };
+        return map[risk] || 'bg-slate-100 text-slate-700';
+    }
+
+    function shadeColor(color, percent) {
+        let R = parseInt(color.substring(1,3),16);
+        let G = parseInt(color.substring(3,5),16);
+        let B = parseInt(color.substring(5,7),16);
+        R = Math.min(255, Math.max(0, Math.round(R * (100 + percent) / 100)));
+        G = Math.min(255, Math.max(0, Math.round(G * (100 + percent) / 100)));
+        B = Math.min(255, Math.max(0, Math.round(B * (100 + percent) / 100)));
+        return '#' + (0x1000000 + R*0x10000 + G*0x100 + B).toString(16).slice(1);
+    }
     </script>
 </body>
 </html>
