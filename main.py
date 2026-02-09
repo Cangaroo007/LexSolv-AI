@@ -13,6 +13,7 @@ import secrets
 from contextlib import asynccontextmanager
 from typing import Optional
 
+import sqlalchemy as sa
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
@@ -21,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from integrations.xero_client import XeroClient, XeroTokenSet
 from integrations.myob_client import MYOBClient, MYOBTokenSet
 from models.schemas import CompanyData, CreditorList, Transaction
+from db.database import async_engine, Base, get_db
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -59,9 +61,21 @@ _oauth_states: dict[str, str] = {}  # state -> provider
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialise integration clients on startup."""
+    """Initialise database and integration clients on startup."""
     global xero_client, myob_client
 
+    # --- Database ---------------------------------------------------------
+    # Import all ORM models so Base.metadata knows about them
+    import db.models  # noqa: F401
+
+    logger.info("Connecting to PostgreSQL…")
+    async with async_engine.begin() as conn:
+        # In production, use Alembic migrations instead of create_all.
+        # This is a safety net for local development.
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Database tables verified")
+
+    # --- Integration clients -----------------------------------------------
     if XERO_CLIENT_ID:
         xero_client = XeroClient(
             client_id=XERO_CLIENT_ID,
@@ -84,6 +98,8 @@ async def lifespan(app: FastAPI):
 
     yield  # Application runs here
 
+    # --- Shutdown ----------------------------------------------------------
+    await async_engine.dispose()
     logger.info("Shutting down LexSolv AI backend")
 
 
@@ -149,9 +165,19 @@ async def reset():
 
 @app.get("/health", tags=["System"])
 async def health_check():
+    # Quick DB connectivity check
+    db_status = "unknown"
+    try:
+        async with async_engine.connect() as conn:
+            await conn.execute(sa.text("SELECT 1"))
+        db_status = "connected"
+    except Exception:
+        db_status = "unavailable"
+
     return {
         "status": "ok",
         "service": "lexsolv-ai",
+        "database": db_status,
         "integrations": {
             "xero": "configured" if xero_client else "not configured",
             "myob": "configured" if myob_client else "not configured",

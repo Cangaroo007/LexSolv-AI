@@ -11,6 +11,11 @@ pydantic>=2.10.0
 # HTTP client (for OAuth2 token exchange & API calls)
 httpx>=0.28.0
 
+# Database — async PostgreSQL
+sqlalchemy[asyncio]>=2.0.36
+asyncpg>=0.30.0
+alembic>=1.14.0
+
 # Xero SDK
 xero-python>=6.1.0
 
