@@ -209,3 +209,91 @@ class Transaction(BaseModel):
                 "external_id": "xero-inv-xyz789",
             }
         }
+
+
+# ---------------------------------------------------------------------------
+# Forensic Analysis — response schemas
+# ---------------------------------------------------------------------------
+
+class RiskLevel(str, Enum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INFO = "info"
+
+
+class PreferencePaymentFlag(BaseModel):
+    """A single flagged preference payment."""
+
+    transaction_id: UUID
+    reference: Optional[str] = None
+    date: date
+    amount: Decimal
+    contact_name: Optional[str] = None
+    description: Optional[str] = None
+    days_before_insolvency: int = Field(..., description="Days between this payment and the insolvency date")
+    risk_level: RiskLevel
+    reason: str = Field(..., description="Human-readable explanation of why this was flagged")
+
+
+class PreferencePaymentReport(BaseModel):
+    """Full preference-payment detection report."""
+
+    insolvency_date: date
+    threshold_days: int
+    total_flagged: int
+    total_flagged_amount: Decimal
+    flags: list[PreferencePaymentFlag]
+    summary: str = Field(..., description="Dashboard-ready summary sentence")
+
+
+class RelatedPartyFlag(BaseModel):
+    """A single flagged related-party transaction."""
+
+    transaction_id: UUID
+    reference: Optional[str] = None
+    date: date
+    amount: Decimal
+    contact_name: Optional[str] = None
+    description: Optional[str] = None
+    matched_director: str = Field(..., description="The director name that triggered the match")
+    match_field: str = Field(..., description="Which field matched: 'contact_name' or 'description'")
+    risk_level: RiskLevel
+    reason: str
+
+
+class RelatedPartyReport(BaseModel):
+    """Full related-party transaction detection report."""
+
+    director_names: list[str]
+    total_flagged: int
+    total_flagged_amount: Decimal
+    flags: list[RelatedPartyFlag]
+    summary: str
+
+
+class SolvencyScore(BaseModel):
+    """Solvency assessment — Liquidation vs Small Business Restructuring (SBR)."""
+
+    current_assets: Decimal
+    current_liabilities: Decimal
+    net_position: Decimal = Field(..., description="current_assets - current_liabilities")
+    solvency_ratio: float = Field(..., description="current_assets / current_liabilities (0 if no liabilities)")
+    score: int = Field(..., ge=0, le=100, description="0-100 score: higher = healthier")
+    recommendation: str = Field(..., description="'liquidation', 'sbr_candidate', or 'solvent'")
+    risk_level: RiskLevel
+    explanation: str = Field(..., description="Dashboard-ready explanation")
+
+
+class ForensicReport(BaseModel):
+    """Combined forensic analysis report — the complete dashboard payload."""
+
+    company_name: Optional[str] = None
+    analysis_date: date
+    preference_payments: PreferencePaymentReport
+    related_parties: RelatedPartyReport
+    solvency: SolvencyScore
+    overall_risk: RiskLevel
+    alert_count: int
+    summary: str = Field(..., description="Top-level summary for the dashboard header")

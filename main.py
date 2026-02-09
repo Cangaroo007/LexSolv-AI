@@ -11,18 +11,30 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
+from datetime import date
+from decimal import Decimal
 from typing import Optional
 
 import sqlalchemy as sa
 from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from integrations.xero_client import XeroClient, XeroTokenSet
 from integrations.myob_client import MYOBClient, MYOBTokenSet
-from models.schemas import CompanyData, CreditorList, Transaction
+from models.schemas import (
+    CompanyData,
+    CreditorList,
+    ForensicReport,
+    PreferencePaymentReport,
+    RelatedPartyReport,
+    SolvencyScore,
+    Transaction,
+)
 from db.database import async_engine, Base, get_db
+from services.forensic_engine import ForensicAnalyzer
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -435,6 +447,122 @@ async def myob_company_info(company_file_id: str):
         return await myob_client.get_company_info(company_file_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=401, detail=str(exc))
+
+
+# ===================================================================
+# Forensic Analysis endpoints
+# ===================================================================
+
+# Instantiate the forensic engine (stateless — safe as singleton)
+forensic_analyzer = ForensicAnalyzer()
+
+
+class ForensicRequest(BaseModel):
+    """Request body for a full forensic analysis."""
+
+    transactions: list[Transaction]
+    insolvency_date: date
+    director_names: list[str] = []
+    current_assets: Decimal = Decimal("0.00")
+    current_liabilities: Decimal = Decimal("0.00")
+    company_name: Optional[str] = None
+    threshold_days: int = 90
+
+
+class PreferencePaymentRequest(BaseModel):
+    """Request body for preference-payment detection only."""
+
+    transactions: list[Transaction]
+    insolvency_date: date
+    threshold_days: int = 90
+
+
+class RelatedPartyRequest(BaseModel):
+    """Request body for related-party detection only."""
+
+    transactions: list[Transaction]
+    director_names: list[str]
+
+
+class SolvencyRequest(BaseModel):
+    """Request body for solvency score calculation only."""
+
+    current_assets: Decimal
+    current_liabilities: Decimal
+
+
+@app.post(
+    "/api/forensic/analyze",
+    response_model=ForensicReport,
+    tags=["Forensic"],
+    summary="Run full forensic analysis",
+)
+async def forensic_full_analysis(req: ForensicRequest):
+    """
+    Run the complete forensic analysis: preference payments, related-party
+    transactions, and solvency score. Returns a single dashboard-ready report.
+    """
+    return forensic_analyzer.full_report(
+        transactions=req.transactions,
+        insolvency_date=req.insolvency_date,
+        director_names=req.director_names,
+        current_assets=req.current_assets,
+        current_liabilities=req.current_liabilities,
+        company_name=req.company_name,
+        threshold_days=req.threshold_days,
+    )
+
+
+@app.post(
+    "/api/forensic/preference-payments",
+    response_model=PreferencePaymentReport,
+    tags=["Forensic"],
+    summary="Detect preference payments",
+)
+async def forensic_preference_payments(req: PreferencePaymentRequest):
+    """
+    Scan transactions for potential unfair preference payments made within
+    the look-back window before the insolvency date.
+    """
+    return forensic_analyzer.detect_preference_payments(
+        transactions=req.transactions,
+        insolvency_date=req.insolvency_date,
+        threshold_days=req.threshold_days,
+    )
+
+
+@app.post(
+    "/api/forensic/related-parties",
+    response_model=RelatedPartyReport,
+    tags=["Forensic"],
+    summary="Identify related-party transactions",
+)
+async def forensic_related_parties(req: RelatedPartyRequest):
+    """
+    Scan transactions for payees or descriptions matching director names
+    or known related parties.
+    """
+    return forensic_analyzer.identify_related_parties(
+        transactions=req.transactions,
+        director_names_list=req.director_names,
+    )
+
+
+@app.post(
+    "/api/forensic/solvency-score",
+    response_model=SolvencyScore,
+    tags=["Forensic"],
+    summary="Calculate solvency score (Liquidation vs SBR)",
+)
+async def forensic_solvency_score(req: SolvencyRequest):
+    """
+    Calculate the Liquidation vs Small Business Restructuring (SBR) ratio
+    and return a 0-100 solvency score with a recommendation.
+    """
+    return forensic_analyzer.calculate_solvency_score(
+        current_assets=req.current_assets,
+        current_liabilities=req.current_liabilities,
+    )
 
 
 # ===================================================================
