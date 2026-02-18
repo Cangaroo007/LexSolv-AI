@@ -99,6 +99,12 @@ class CreditorDB(Base):
     source_invoice_ids = Column(JSONB, default=list)  # list of strings
     notes = Column(Text, nullable=True)
 
+    # SBR-specific fields (Prompt 1.2)
+    is_related_party = Column(Boolean, default=False)
+    is_secured = Column(Boolean, default=False)
+    can_vote = Column(Boolean, default=True)
+    source = Column(String(20), default="manual")  # 'parsed' or 'manual'
+
     as_at_date = Column(Date, nullable=False, server_default=func.current_date())
 
     # Timestamps
