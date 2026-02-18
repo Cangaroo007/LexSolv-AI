@@ -304,3 +304,34 @@ class PlanParametersDB(Base):
 
     def __repr__(self) -> str:
         return f"<PlanParameters contribution={self.total_contribution}>"
+
+
+# ---------------------------------------------------------------------------
+# EntityMap — persisted PII entity maps for audit trail (2.1)
+# ---------------------------------------------------------------------------
+
+class EntityMapDB(Base):
+    __tablename__ = "entity_maps"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    engagement_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    entity_map = Column(JSONB, nullable=False)
+    section = Column(String(100), nullable=True)  # which narrative section
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    company = relationship("CompanyDB", backref="entity_maps")
+
+    __table_args__ = (
+        Index("ix_entity_maps_engagement_section", "engagement_id", "section"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<EntityMap engagement={self.engagement_id} section={self.section}>"
