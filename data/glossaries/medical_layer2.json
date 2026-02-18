@@ -1,0 +1,14 @@
+{
+  "terms": {
+    "allograft": "Tissue transplanted from one person to another \u2014 in this context, allograft bone and tissue used in orthopaedic surgery",
+    "orthopaedic": "Branch of medicine dealing with the musculoskeletal system \u2014 bones, joints, ligaments, tendons, muscles",
+    "surgical_consumables": "Single-use medical supplies consumed during surgical procedures \u2014 sutures, implants, dressings, instruments",
+    "TGA": "Therapeutic Goods Administration \u2014 Australian regulatory body for medical devices and pharmaceuticals",
+    "ARTG": "Australian Register of Therapeutic Goods \u2014 the register of approved medical devices and medicines",
+    "tissue_bank": "A facility that collects, processes, stores, and distributes human tissue for transplantation",
+    "cold_chain": "Temperature-controlled supply chain required for biological products and certain medical supplies",
+    "surgical_tray": "A pre-assembled set of surgical instruments and consumables prepared for a specific procedure",
+    "biologics": "Medical products derived from biological sources, including allograft tissue, growth factors, and cellular therapies",
+    "procurement": "In medical context, the sourcing and acquisition of surgical supplies, implants, and consumables"
+  }
+}

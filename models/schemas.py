@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -486,3 +486,27 @@ class PaymentScheduleResult(BaseModel):
     total_contribution: float
     total_fees: float
     total_net_dividend: float
+
+
+# ---------------------------------------------------------------------------
+# Narrative Generator — schemas (Prompt 2.2)
+# ---------------------------------------------------------------------------
+
+
+class NarrativeSection(BaseModel):
+    """A single generated narrative section."""
+
+    section: str
+    content: str
+    status: str = "draft"
+    metadata_: Optional[dict] = None
+    requires_input_flags: Optional[List[str]] = None
+    unknown_terms: Optional[List[str]] = None
+
+
+class NarrativeResponse(BaseModel):
+    """Response containing one or more generated narrative sections."""
+
+    engagement_id: str
+    sections: List[NarrativeSection]
+    generated_at: str
