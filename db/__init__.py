@@ -1,10 +1,12 @@
 from .database import async_engine, async_session_factory, get_db, Base
 from .models import (
+    AssetDB,
     CompanyDB,
     CreditorDB,
-    TransactionDB,
     IntegrationConnectionDB,
     OAuthTokenDB,
+    PlanParametersDB,
+    TransactionDB,
 )
 
 __all__ = [
@@ -12,9 +14,11 @@ __all__ = [
     "async_session_factory",
     "get_db",
     "Base",
+    "AssetDB",
     "CompanyDB",
     "CreditorDB",
-    "TransactionDB",
     "IntegrationConnectionDB",
     "OAuthTokenDB",
+    "PlanParametersDB",
+    "TransactionDB",
 ]

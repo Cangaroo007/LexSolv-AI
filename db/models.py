@@ -17,8 +17,10 @@ from sqlalchemy import (
     Date,
     DateTime,
     Enum as SAEnum,
+    Float,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -242,3 +244,47 @@ class OAuthTokenDB(Base):
 
     def __repr__(self) -> str:
         return f"<OAuthToken connection={self.connection_id} expires={self.expires_at}>"
+
+
+# ---------------------------------------------------------------------------
+# Asset — individual asset entries for SBR vs Liquidation comparison (1.3)
+# ---------------------------------------------------------------------------
+
+class AssetDB(Base):
+    __tablename__ = "assets"
+
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"))
+    asset_type = Column(String(50))
+    description = Column(Text)
+    book_value = Column(Float)
+    liquidation_recovery_pct = Column(Float)
+    liquidation_value = Column(Float)
+    notes = Column(Text, nullable=True)
+    source = Column(String(20), default="parsed")
+
+    def __repr__(self) -> str:
+        return f"<Asset {self.asset_type} book={self.book_value}>"
+
+
+# ---------------------------------------------------------------------------
+# PlanParameters — configurable SBR plan parameters (1.3)
+# ---------------------------------------------------------------------------
+
+class PlanParametersDB(Base):
+    __tablename__ = "plan_parameters"
+
+    id = Column(String, primary_key=True)
+    company_id = Column(String, ForeignKey("companies.id"), unique=True)
+    total_contribution = Column(Float)
+    practitioner_fee_pct = Column(Float, default=10.0)
+    num_initial_payments = Column(Integer, default=2)
+    initial_payment_amount = Column(Float, default=0.0)
+    num_ongoing_payments = Column(Integer, default=22)
+    ongoing_payment_amount = Column(Float, default=0.0)
+    est_liquidator_fees = Column(Float, default=50000.0)
+    est_legal_fees = Column(Float, default=10000.0)
+    est_disbursements = Column(Float, default=5000.0)
+
+    def __repr__(self) -> str:
+        return f"<PlanParameters contribution={self.total_contribution}>"
