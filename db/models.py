@@ -63,6 +63,8 @@ class CompanyDB(Base):
     creditors = relationship("CreditorDB", back_populates="company", cascade="all, delete-orphan")
     transactions = relationship("TransactionDB", back_populates="company", cascade="all, delete-orphan")
     integration_connections = relationship("IntegrationConnectionDB", back_populates="company", cascade="all, delete-orphan")
+    assets = relationship("AssetDB", back_populates="company", cascade="all, delete-orphan")
+    plan_parameters = relationship("PlanParametersDB", back_populates="company", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_companies_source_external", "source", "external_id", unique=True),
@@ -253,8 +255,8 @@ class OAuthTokenDB(Base):
 class AssetDB(Base):
     __tablename__ = "assets"
 
-    id = Column(String, primary_key=True)
-    company_id = Column(String, ForeignKey("companies.id"))
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     asset_type = Column(String(50))
     description = Column(Text)
     book_value = Column(Float)
@@ -262,6 +264,13 @@ class AssetDB(Base):
     liquidation_value = Column(Float)
     notes = Column(Text, nullable=True)
     source = Column(String(20), default="parsed")
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    company = relationship("CompanyDB", back_populates="assets")
 
     def __repr__(self) -> str:
         return f"<Asset {self.asset_type} book={self.book_value}>"
@@ -274,8 +283,8 @@ class AssetDB(Base):
 class PlanParametersDB(Base):
     __tablename__ = "plan_parameters"
 
-    id = Column(String, primary_key=True)
-    company_id = Column(String, ForeignKey("companies.id"), unique=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     total_contribution = Column(Float)
     practitioner_fee_pct = Column(Float, default=10.0)
     num_initial_payments = Column(Integer, default=2)
@@ -285,6 +294,13 @@ class PlanParametersDB(Base):
     est_liquidator_fees = Column(Float, default=50000.0)
     est_legal_fees = Column(Float, default=10000.0)
     est_disbursements = Column(Float, default=5000.0)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    # Relationships
+    company = relationship("CompanyDB", back_populates="plan_parameters")
 
     def __repr__(self) -> str:
         return f"<PlanParameters contribution={self.total_contribution}>"
