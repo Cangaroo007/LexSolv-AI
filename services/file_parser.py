@@ -99,6 +99,10 @@ class FileParser:
         "cash": ["cash", "bank", "cheque account", "savings"],
         "receivables": ["receivable", "trade debtor", "accounts receivable"],
         "inventory": ["inventory", "stock", "stock on hand"],
+        "loans_shareholder": [
+            "shareholder loan",
+            "shareholder loans",
+        ],
         "loans_to_related": [
             "loan to",
             "loans to",
@@ -106,7 +110,6 @@ class FileParser:
             "related entities",
             "intercompany",
             "director loan",
-            "shareholder loan",
         ],
         "equipment": ["plant", "equipment", "motor vehicle", "furniture"],
         "total_liabilities": ["total liabilities", "total current liabilities"],
@@ -132,6 +135,7 @@ class FileParser:
             "receivables": 0.0,
             "inventory": 0.0,
             "loans_to_related": 0.0,
+            "loans_shareholder": 0.0,
             "equipment": 0.0,
             "total_liabilities": 0.0,
         }

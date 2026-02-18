@@ -226,6 +226,7 @@ class ComparisonEngine:
         - 'receivables' -> 'receivables'
         - 'inventory' -> 'inventory'
         - 'loans_to_related' -> 'loans_related'
+        - 'loans_shareholder' -> 'loans_shareholder'
         - 'equipment' -> 'equipment'
 
         Note: 'total_liabilities' is excluded (not an asset).
@@ -235,6 +236,7 @@ class ComparisonEngine:
             "receivables": ("receivables", "Accounts Receivable"),
             "inventory": ("inventory", "Inventory"),
             "loans_to_related": ("loans_related", "Loans to Related Entities"),
+            "loans_shareholder": ("loans_shareholder", "Shareholder Loans"),
             "equipment": ("equipment", "Plant & Equipment"),
         }
 

@@ -261,15 +261,15 @@ class TestBuildAssetsFromBalanceSheet:
     def test_build_assets_from_pbm_balance_sheet(self):
         parsed = parser.parse_balance_sheet(str(FIXTURES / "pbm_balance_sheet.csv"))
         assets = engine.build_assets_from_balance_sheet(parsed)
-        # Should have 5 asset entries (cash, receivables, inventory,
-        # loans_to_related->loans_related, equipment) — not total_liabilities
-        assert len(assets) == 5
+        # Should have 6 asset entries (cash, receivables, inventory,
+        # loans_related, loans_shareholder, equipment) — not total_liabilities
+        assert len(assets) == 6
 
     def test_asset_types_correct(self):
         parsed = parser.parse_balance_sheet(str(FIXTURES / "pbm_balance_sheet.csv"))
         assets = engine.build_assets_from_balance_sheet(parsed)
         types = {a["asset_type"] for a in assets}
-        assert types == {"cash", "receivables", "inventory", "loans_related", "equipment"}
+        assert types == {"cash", "receivables", "inventory", "loans_related", "loans_shareholder", "equipment"}
 
     def test_default_recovery_rates_applied(self):
         parsed = parser.parse_balance_sheet(str(FIXTURES / "pbm_balance_sheet.csv"))
@@ -279,6 +279,7 @@ class TestBuildAssetsFromBalanceSheet:
         assert by_type["receivables"]["liquidation_recovery_pct"] == 0.30
         assert by_type["inventory"]["liquidation_recovery_pct"] == 0.25
         assert by_type["loans_related"]["liquidation_recovery_pct"] == 0.30
+        assert by_type["loans_shareholder"]["liquidation_recovery_pct"] == 0.00
         assert by_type["equipment"]["liquidation_recovery_pct"] == 0.25
 
     def test_liquidation_values_calculated(self):
