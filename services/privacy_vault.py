@@ -538,3 +538,197 @@ def get_vault_stats() -> dict[str, Any]:
             "total_tokens_stored": total_tokens,
             "oldest_vault_age_seconds": max(ages) if ages else None,
         }
+
+
+# ---------------------------------------------------------------------------
+# SBR Narrative Scrubbing — free-text PII detection & replacement
+# ---------------------------------------------------------------------------
+# Extends the privacy vault with categories specific to director narratives
+# used in Small Business Restructuring (SBR) plans.
+#
+# Unlike the structured-JSON DeIdentifier above, these functions operate on
+# free-text narratives using regex patterns and known-entity matching.
+# ---------------------------------------------------------------------------
+
+class SBRCategory(str, Enum):
+    """PII categories for SBR director narrative scrubbing."""
+    DIRECTOR_ADDRESS = "director_address"
+    CLIENT_NAME = "client_name"
+    TRUST_NAME = "trust_name"
+    COUNTERPARTY = "counterparty"
+    BANK_ACCOUNT_SBR = "bank_account_sbr"
+    PROVIDER_NUMBER = "provider_number"
+
+
+SBR_TAG_PREFIXES: dict[SBRCategory, str] = {
+    SBRCategory.DIRECTOR_ADDRESS: "DIRECTOR_ADDRESS",
+    SBRCategory.CLIENT_NAME: "CLIENT_NAME",
+    SBRCategory.TRUST_NAME: "TRUST",
+    SBRCategory.COUNTERPARTY: "COUNTERPARTY",
+    SBRCategory.BANK_ACCOUNT_SBR: "BANK_ACCOUNT",
+    SBRCategory.PROVIDER_NUMBER: "PROVIDER_NUMBER",
+}
+
+
+def _seq_letter(index: int) -> str:
+    """Convert 0-based index to sequential letter: 0→A, 1→B, … 25→Z, 26→AA."""
+    if index < 26:
+        return chr(ord("A") + index)
+    return _seq_letter(index // 26 - 1) + chr(ord("A") + index % 26)
+
+
+# -- Regex patterns for automatic PII detection in narrative text -----------
+
+# Australian street address: "42 Harbour Road, Manly NSW 2095"
+_SBR_ADDRESS_RE = re.compile(
+    r"\d{1,5}\s+"
+    r"[A-Z][a-zA-Z\s]+?"
+    r"(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Court|Ct|"
+    r"Place|Pl|Crescent|Cres|Boulevard|Blvd|Terrace|Tce|Way|"
+    r"Circuit|Cct|Parade|Pde|Close|Cl)"
+    r"[,\s]+"
+    r"[A-Z][a-zA-Z\s]+?"
+    r"\s+(?:NSW|VIC|QLD|SA|WA|TAS|NT|ACT)"
+    r"\s+\d{4}"
+)
+
+# Family trust: "Mitchell Family Trust", "Flaherty Trust"
+_SBR_TRUST_RE = re.compile(
+    r"[A-Z][a-zA-Z]+"
+    r"(?:\s+[A-Z][a-zA-Z]+)*"
+    r"\s+(?:Family\s+)?Trust"
+)
+
+# BSB + account number: "062-000 12345678", "062-000 Account 12345678"
+_SBR_BSB_ACCOUNT_RE = re.compile(
+    r"\b\d{3}[-\s]?\d{3}\s+(?:Account\s+)?\d{6,9}\b"
+)
+
+# Medicare / provider number: "2834710F", "123456AB"
+_SBR_PROVIDER_RE = re.compile(
+    r"\b\d{6,8}[A-Z]{1,2}\b"
+)
+
+# Company with Pty Ltd / Ltd suffix: "BlueShak Pty Ltd"
+# Limit to 1-4 capitalized words before the suffix to avoid greedy over-matching.
+_SBR_COMPANY_RE = re.compile(
+    r"[A-Z][a-zA-Z0-9]+"
+    r"(?:\s+[A-Z][a-zA-Z0-9]+){0,3}"
+    r"\s+(?:Pty\s+Ltd|Ltd|Pty\s+Limited|Limited)"
+)
+
+
+@dataclass
+class ScrubResult:
+    """Result of scrubbing PII from narrative text."""
+    scrubbed_text: str
+    entity_map: dict[str, str]   # tag → original value
+
+
+def scrub(
+    text: str,
+    known_entities: Optional[dict[str, list[str]]] = None,
+) -> ScrubResult:
+    """
+    Scrub PII from free-text narrative, returning scrubbed text and entity map.
+
+    Uses regex patterns for automatically detectable PII (addresses, trusts,
+    bank accounts, provider numbers, company names with Pty Ltd) and
+    known-entity string matching as a fallback for names and companies
+    without standard suffixes.
+
+    Parameters
+    ----------
+    text : str
+        The narrative text to scrub.
+    known_entities : dict, optional
+        Known entities keyed by SBRCategory value.
+        e.g. ``{"client_name": ["Dr James Mitchell"], "counterparty": ["BTC Health"]}``
+
+    Returns
+    -------
+    ScrubResult
+        Contains scrubbed_text and entity_map for round-trip restoration.
+    """
+    known_entities = known_entities or {}
+    valid_categories = {c.value for c in SBRCategory}
+
+    # Collect PII values: original_value → category
+    pii_values: dict[str, str] = {}
+
+    # 1. Known entities take priority (caller-provided, most precise)
+    for category, entities in known_entities.items():
+        if category not in valid_categories:
+            continue
+        for entity in entities:
+            if entity in text:
+                pii_values[entity] = category
+
+    # 2. Regex detection — only for values not already found via known entities
+    _regex_detect = [
+        (_SBR_ADDRESS_RE, SBRCategory.DIRECTOR_ADDRESS.value),
+        (_SBR_TRUST_RE, SBRCategory.TRUST_NAME.value),
+        (_SBR_BSB_ACCOUNT_RE, SBRCategory.BANK_ACCOUNT_SBR.value),
+        (_SBR_PROVIDER_RE, SBRCategory.PROVIDER_NUMBER.value),
+        (_SBR_COMPANY_RE, SBRCategory.COUNTERPARTY.value),
+    ]
+
+    for pattern, cat_value in _regex_detect:
+        for match in pattern.finditer(text):
+            val = match.group()
+            if val not in pii_values:
+                # Skip if this match overlaps with an already-found entity:
+                # either the match is a substring of an existing entity, or
+                # the match contains an existing entity (broader false-positive).
+                already_covered = any(
+                    val in existing or existing in val
+                    for existing in pii_values if existing != val
+                )
+                if not already_covered:
+                    pii_values[val] = cat_value
+
+    # 3. Group by category, preserving discovery order
+    by_category: dict[str, list[str]] = {}
+    for value, cat in pii_values.items():
+        by_category.setdefault(cat, []).append(value)
+
+    # 4. Assign sequential-letter tags per category
+    entity_map: dict[str, str] = {}
+    reverse_map: dict[str, str] = {}  # original → tag
+
+    for cat_value, values in by_category.items():
+        prefix = SBR_TAG_PREFIXES[SBRCategory(cat_value)]
+        for i, value in enumerate(values):
+            tag = f"[{prefix}_{_seq_letter(i)}]"
+            entity_map[tag] = value
+            reverse_map[value] = tag
+
+    # 5. Replace in text — longest values first to avoid partial replacement
+    scrubbed = text
+    for value, tag in sorted(reverse_map.items(), key=lambda x: -len(x[0])):
+        scrubbed = scrubbed.replace(value, tag)
+
+    return ScrubResult(scrubbed_text=scrubbed, entity_map=entity_map)
+
+
+def restore(scrubbed_text: str, entity_map: dict[str, str]) -> str:
+    """
+    Restore original text from scrubbed text using the entity map.
+
+    Parameters
+    ----------
+    scrubbed_text : str
+        Text containing placeholder tags (e.g. ``[CLIENT_NAME_A]``).
+    entity_map : dict
+        Mapping of tags to original values, as returned by :func:`scrub`.
+
+    Returns
+    -------
+    str
+        The original text with all tags replaced by their real values.
+    """
+    result = scrubbed_text
+    # Replace longest tags first to avoid partial replacement
+    for tag, original in sorted(entity_map.items(), key=lambda x: -len(x[0])):
+        result = result.replace(tag, original)
+    return result
