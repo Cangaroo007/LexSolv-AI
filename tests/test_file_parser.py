@@ -82,8 +82,11 @@ class TestParseBalanceSheet:
 
     def test_loans_to_related(self):
         result = parser.parse_balance_sheet(str(FIXTURES / "pbm_balance_sheet.csv"))
-        # "Loans to Related Entities" + "Shareholder Loans"
-        assert result["loans_to_related"] == pytest.approx(34964.83 + 2010000.00)
+        assert result["loans_to_related"] == pytest.approx(34964.83)
+
+    def test_loans_shareholder(self):
+        result = parser.parse_balance_sheet(str(FIXTURES / "pbm_balance_sheet.csv"))
+        assert result["loans_shareholder"] == pytest.approx(2010000.00)
 
     def test_equipment(self):
         result = parser.parse_balance_sheet(str(FIXTURES / "pbm_balance_sheet.csv"))

@@ -813,6 +813,7 @@ async def upload_balance_sheet(file: UploadFile):
         assets = comparison_engine.build_assets_from_balance_sheet(parsed)
         return {
             "assets": assets,
+            "total_liabilities": parsed.get("total_liabilities", 0.0),
             "parse_method": "keyword_match",
         }
     except ValueError as exc:
@@ -1118,9 +1119,14 @@ async def update_creditor(
 async def save_assets(
     company_id: str,
     assets: list[dict],
+    total_liabilities: float | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Save asset register. Replaces existing assets for this company."""
+    """
+    Save asset register. Replaces existing assets for this company.
+    Optionally pass ?total_liabilities=985777.37 to store the balance-sheet
+    total liabilities on the company record for use in comparison calculations.
+    """
     import uuid as _uuid
 
     try:
@@ -1132,8 +1138,14 @@ async def save_assets(
     result = await db.execute(
         sa.select(CompanyDB).where(CompanyDB.id == cid)
     )
-    if not result.scalar_one_or_none():
+    company = result.scalar_one_or_none()
+    if not company:
         raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Store total_liabilities on company if provided
+    if total_liabilities is not None and total_liabilities > 0:
+        company.total_creditors = total_liabilities
+        await db.flush()
 
     # Delete existing assets
     await db.execute(
@@ -1179,6 +1191,14 @@ async def run_comparison(company_id: str, db: AsyncSession = Depends(get_db)):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid company ID format")
 
+    # Load company (for total_creditors override)
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
     # Load plan parameters
     plan_result = await db.execute(
         sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
@@ -1218,7 +1238,12 @@ async def run_comparison(company_id: str, db: AsyncSession = Depends(get_db)):
         for a in assets_rows
     ]
 
-    creditors_total = sum(float(c.amount_claimed) for c in creditors)
+    # Use balance-sheet total liabilities if stored, otherwise sum individual claims
+    stored_total = float(company.total_creditors or 0)
+    if stored_total > 0:
+        creditors_total = stored_total
+    else:
+        creditors_total = sum(float(c.amount_claimed) for c in creditors)
 
     plan = {
         "total_contribution": plan_row.total_contribution,

@@ -102,6 +102,7 @@ class _FakeCompany:
         self.legal_name = kwargs.get("legal_name", "Test Co")
         self.acn = kwargs.get("acn")
         self.abn = kwargs.get("abn")
+        self.total_creditors = kwargs.get("total_creditors", 0)
         self.created_at = "2026-01-01T00:00:00"
 
 
@@ -289,11 +290,17 @@ def _build_mock_db(results_in_order: list):
 @pytest.mark.asyncio
 async def test_comparison_endpoint_returns_result():
     """Create engagement with test data, POST compare → 200 with dividend figures."""
-    # run_comparison queries in order: plan, creditors, assets
+    # run_comparison queries in order: company, plan, creditors, assets
+    _test_company = _FakeCompany(
+        id=_TEST_COMPANY_ID,
+        legal_name="Point Blank Medical Pty Ltd",
+        total_creditors=985777.37,
+    )
     mock_db = _build_mock_db([
-        _PBM_PLAN,        # 1st query: select PlanParametersDB -> .scalar_one_or_none()
-        _PBM_CREDITORS,   # 2nd query: select CreditorDB -> .scalars().all()
-        _PBM_ASSETS,      # 3rd query: select AssetDB -> .scalars().all()
+        _test_company,    # 1st query: select CompanyDB -> .scalar_one_or_none()
+        _PBM_PLAN,        # 2nd query: select PlanParametersDB -> .scalar_one_or_none()
+        _PBM_CREDITORS,   # 3rd query: select CreditorDB -> .scalars().all()
+        _PBM_ASSETS,      # 4th query: select AssetDB -> .scalars().all()
     ])
 
     from db.database import get_db as _original_get_db
