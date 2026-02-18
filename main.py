@@ -10,17 +10,19 @@ from __future__ import annotations
 import logging
 import os
 import secrets
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import date
 from decimal import Decimal
 from typing import Optional
 
 import sqlalchemy as sa
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from integrations.xero_client import XeroClient, XeroTokenSet
 from integrations.myob_client import MYOBClient, MYOBTokenSet
@@ -37,6 +39,11 @@ from models.schemas import (
     Transaction,
 )
 from db.database import async_engine, Base, get_db
+from db.models import AssetDB, CompanyDB, CreditorDB, PlanParametersDB
+from services.file_parser import FileParser
+from services.creditor_schedule import CreditorScheduleService
+from services.comparison_engine import ComparisonEngine
+from services.payment_schedule import PaymentScheduleGenerator
 from services.forensic_engine import ForensicAnalyzer
 from services.document_generator import DocumentGenerator
 from services.privacy_vault import DeIdentifier, re_identify, get_vault_stats
@@ -74,6 +81,14 @@ myob_client: Optional[MYOBClient] = None
 
 # In-memory token / state storage (swap for DB / Redis in production)
 _oauth_states: dict[str, str] = {}  # state -> provider
+
+# Service singletons for SBR endpoints
+file_parser = FileParser()
+creditor_schedule_service = CreditorScheduleService()
+comparison_engine = ComparisonEngine()
+payment_schedule_generator = PaymentScheduleGenerator()
+
+_ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 
 
 @asynccontextmanager
@@ -725,6 +740,541 @@ async def re_identify_data(req: ReIdentifyRequest):
 async def vault_stats():
     """Return aggregate stats about active de-identification vaults."""
     return get_vault_stats()
+
+
+# ===================================================================
+# File Upload endpoints (1.4A)
+# ===================================================================
+
+
+def _validate_upload_extension(filename: str | None) -> str:
+    """Validate file extension and return the lowercased extension. Raises 400 on failure."""
+    if not filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _ALLOWED_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail="Supported formats: .csv, .xlsx, .xls",
+        )
+    return ext
+
+
+async def _save_upload_to_temp(file: UploadFile, ext: str) -> str:
+    """Save UploadFile content to a temp file, return its path."""
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+    tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+    try:
+        tmp.write(content)
+        tmp.flush()
+        return tmp.name
+    finally:
+        tmp.close()
+
+
+@app.post("/api/upload/aged-payables", tags=["File Upload"])
+async def upload_aged_payables(file: UploadFile):
+    """
+    Upload aged payables CSV/Excel and return parsed creditor list
+    with auto-classification.
+    """
+    ext = _validate_upload_extension(file.filename)
+    tmp_path = await _save_upload_to_temp(file, ext)
+    try:
+        parsed = file_parser.parse_aged_payables(tmp_path)
+        creditors = creditor_schedule_service.build_from_parsed(parsed)
+        # Detect parse method from column mapping
+        parse_method = "generic"
+        if any(c.get("category", "").startswith("ato") for c in creditors):
+            parse_method = "xero"  # best guess — Xero uses "Contact" column
+        return {
+            "creditors": creditors,
+            "count": len(creditors),
+            "parse_method": parse_method,
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/api/upload/balance-sheet", tags=["File Upload"])
+async def upload_balance_sheet(file: UploadFile):
+    """
+    Upload balance sheet and return parsed asset register with default
+    recovery rates.
+    """
+    ext = _validate_upload_extension(file.filename)
+    tmp_path = await _save_upload_to_temp(file, ext)
+    try:
+        parsed = file_parser.parse_balance_sheet(tmp_path)
+        assets = comparison_engine.build_assets_from_balance_sheet(parsed)
+        return {
+            "assets": assets,
+            "parse_method": "keyword_match",
+        }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/api/upload/bank-statement", tags=["File Upload"])
+async def upload_bank_statement(file: UploadFile):
+    """Upload bank statement CSV and return closing balance and period."""
+    ext = _validate_upload_extension(file.filename)
+    tmp_path = await _save_upload_to_temp(file, ext)
+    try:
+        result = file_parser.parse_bank_statement(tmp_path)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        os.unlink(tmp_path)
+
+
+@app.post("/api/upload/pnl", tags=["File Upload"])
+async def upload_pnl(file: UploadFile):
+    """Upload P&L and return revenue/profit history."""
+    ext = _validate_upload_extension(file.filename)
+    tmp_path = await _save_upload_to_temp(file, ext)
+    try:
+        result = file_parser.parse_pnl(tmp_path)
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        os.unlink(tmp_path)
+
+
+# ===================================================================
+# SBR Engagement endpoints (1.4B)
+# ===================================================================
+
+
+@app.post("/api/engagements", tags=["SBR Engagement"])
+async def create_engagement(data: dict, db: AsyncSession = Depends(get_db)):
+    """
+    Create new SBR engagement. Creates a company record if needed.
+    Body: {"company_name": "...", "acn": "...", "abn": "...",
+           "appointment_date": "...", "practitioner_name": "..."}
+    Returns the company record with ID.
+    """
+    company = CompanyDB(
+        legal_name=data.get("company_name", ""),
+        acn=data.get("acn"),
+        abn=data.get("abn"),
+        source="sbr",
+    )
+    db.add(company)
+    await db.flush()
+    return {
+        "id": str(company.id),
+        "company_name": company.legal_name,
+        "acn": company.acn,
+        "abn": company.abn,
+        "appointment_date": data.get("appointment_date"),
+        "practitioner_name": data.get("practitioner_name"),
+        "created_at": str(company.created_at) if company.created_at else None,
+    }
+
+
+@app.get("/api/engagements/{company_id}", tags=["SBR Engagement"])
+async def get_engagement(company_id: str, db: AsyncSession = Depends(get_db)):
+    """Get engagement with all related data: company, creditors, assets, plan parameters."""
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Load related data
+    cred_result = await db.execute(
+        sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+    )
+    creditors = cred_result.scalars().all()
+
+    asset_result = await db.execute(
+        sa.select(AssetDB).where(AssetDB.company_id == cid)
+    )
+    assets = asset_result.scalars().all()
+
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan = plan_result.scalar_one_or_none()
+
+    return {
+        "company": {
+            "id": str(company.id),
+            "legal_name": company.legal_name,
+            "acn": company.acn,
+            "abn": company.abn,
+        },
+        "creditors": [
+            {
+                "id": str(c.id),
+                "creditor_name": c.creditor_name,
+                "amount_claimed": float(c.amount_claimed),
+                "category": c.category,
+                "status": c.status,
+                "is_related_party": c.is_related_party,
+                "is_secured": c.is_secured,
+                "can_vote": c.can_vote,
+                "notes": c.notes,
+            }
+            for c in creditors
+        ],
+        "assets": [
+            {
+                "id": str(a.id),
+                "asset_type": a.asset_type,
+                "description": a.description,
+                "book_value": a.book_value,
+                "liquidation_recovery_pct": a.liquidation_recovery_pct,
+                "liquidation_value": a.liquidation_value,
+            }
+            for a in assets
+        ],
+        "plan_parameters": (
+            {
+                "total_contribution": plan.total_contribution,
+                "practitioner_fee_pct": plan.practitioner_fee_pct,
+                "num_initial_payments": plan.num_initial_payments,
+                "initial_payment_amount": plan.initial_payment_amount,
+                "num_ongoing_payments": plan.num_ongoing_payments,
+                "ongoing_payment_amount": plan.ongoing_payment_amount,
+                "est_liquidator_fees": plan.est_liquidator_fees,
+                "est_legal_fees": plan.est_legal_fees,
+                "est_disbursements": plan.est_disbursements,
+            }
+            if plan
+            else None
+        ),
+    }
+
+
+@app.patch("/api/engagements/{company_id}/plan", tags=["SBR Engagement"])
+async def update_plan_parameters(
+    company_id: str, plan: dict, db: AsyncSession = Depends(get_db)
+):
+    """Create or update plan parameters for an engagement."""
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Verify company exists
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Check for existing plan
+    result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    existing = result.scalar_one_or_none()
+
+    if existing:
+        for key, value in plan.items():
+            if hasattr(existing, key):
+                setattr(existing, key, value)
+    else:
+        existing = PlanParametersDB(company_id=cid, **plan)
+        db.add(existing)
+
+    await db.flush()
+    return {
+        "status": "updated",
+        "plan_parameters": {
+            "total_contribution": existing.total_contribution,
+            "practitioner_fee_pct": existing.practitioner_fee_pct,
+            "num_initial_payments": existing.num_initial_payments,
+            "initial_payment_amount": existing.initial_payment_amount,
+            "num_ongoing_payments": existing.num_ongoing_payments,
+            "ongoing_payment_amount": existing.ongoing_payment_amount,
+            "est_liquidator_fees": existing.est_liquidator_fees,
+            "est_legal_fees": existing.est_legal_fees,
+            "est_disbursements": existing.est_disbursements,
+        },
+    }
+
+
+@app.post("/api/engagements/{company_id}/creditors", tags=["SBR Engagement"])
+async def save_creditors(
+    company_id: str,
+    creditors: list[dict],
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Save creditor schedule. Replaces existing creditors for this company.
+    Accepts the reviewed/adjusted creditor list from the UI.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Verify company exists
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Delete existing creditors
+    await db.execute(
+        sa.delete(CreditorDB).where(CreditorDB.company_id == cid)
+    )
+
+    # Insert new creditors
+    saved = []
+    for c in creditors:
+        cred = CreditorDB(
+            company_id=cid,
+            creditor_name=c["creditor_name"],
+            amount_claimed=c["amount_claimed"],
+            category=c.get("category"),
+            status=c.get("status", "active"),
+            is_related_party=c.get("is_related_party", False),
+            is_secured=c.get("is_secured", False),
+            can_vote=c.get("can_vote", True),
+            notes=c.get("notes"),
+            source=c.get("source", "manual"),
+        )
+        db.add(cred)
+        await db.flush()
+        saved.append({"id": str(cred.id), "creditor_name": cred.creditor_name})
+
+    return {"status": "saved", "count": len(saved), "creditors": saved}
+
+
+@app.patch(
+    "/api/engagements/{company_id}/creditors/{creditor_id}",
+    tags=["SBR Engagement"],
+)
+async def update_creditor(
+    company_id: str,
+    creditor_id: str,
+    updates: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a single creditor: related-party flag, status, amount, notes, etc."""
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+        cred_id = _uuid.UUID(creditor_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ID format")
+
+    result = await db.execute(
+        sa.select(CreditorDB).where(
+            CreditorDB.id == cred_id, CreditorDB.company_id == cid
+        )
+    )
+    creditor = result.scalar_one_or_none()
+    if not creditor:
+        raise HTTPException(status_code=404, detail="Creditor not found")
+
+    allowed_fields = {
+        "creditor_name", "amount_claimed", "category", "status",
+        "is_related_party", "is_secured", "can_vote", "notes",
+    }
+    for key, value in updates.items():
+        if key in allowed_fields and hasattr(creditor, key):
+            setattr(creditor, key, value)
+
+    await db.flush()
+    return {
+        "status": "updated",
+        "creditor": {
+            "id": str(creditor.id),
+            "creditor_name": creditor.creditor_name,
+            "amount_claimed": float(creditor.amount_claimed),
+            "is_related_party": creditor.is_related_party,
+            "can_vote": creditor.can_vote,
+        },
+    }
+
+
+@app.post("/api/engagements/{company_id}/assets", tags=["SBR Engagement"])
+async def save_assets(
+    company_id: str,
+    assets: list[dict],
+    db: AsyncSession = Depends(get_db),
+):
+    """Save asset register. Replaces existing assets for this company."""
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Verify company exists
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Delete existing assets
+    await db.execute(
+        sa.delete(AssetDB).where(AssetDB.company_id == cid)
+    )
+
+    # Insert new assets
+    saved = []
+    for a in assets:
+        asset = AssetDB(
+            company_id=cid,
+            asset_type=a.get("asset_type"),
+            description=a.get("description"),
+            book_value=a.get("book_value"),
+            liquidation_recovery_pct=a.get("liquidation_recovery_pct"),
+            liquidation_value=a.get("liquidation_value"),
+            notes=a.get("notes"),
+            source=a.get("source", "manual"),
+        )
+        db.add(asset)
+        await db.flush()
+        saved.append({"id": str(asset.id), "asset_type": asset.asset_type})
+
+    return {"status": "saved", "count": len(saved), "assets": saved}
+
+
+# ===================================================================
+# SBR Calculation endpoints (1.4C)
+# ===================================================================
+
+
+@app.post("/api/engagements/{company_id}/compare", tags=["SBR Calculations"])
+async def run_comparison(company_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Run SBR vs Liquidation comparison.
+    Loads assets, creditors, and plan parameters from DB for this company.
+    Returns ComparisonResult.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Load plan parameters
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    if not plan_row:
+        raise HTTPException(
+            status_code=400,
+            detail="Plan parameters required before comparison",
+        )
+
+    # Load creditors
+    cred_result = await db.execute(
+        sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+    )
+    creditors = cred_result.scalars().all()
+    if not creditors:
+        raise HTTPException(status_code=400, detail="Creditor schedule required")
+
+    # Load assets
+    asset_result = await db.execute(
+        sa.select(AssetDB).where(AssetDB.company_id == cid)
+    )
+    assets_rows = asset_result.scalars().all()
+    if not assets_rows:
+        raise HTTPException(status_code=400, detail="Asset register required")
+
+    # Build dicts for ComparisonEngine
+    assets = [
+        {
+            "asset_type": a.asset_type,
+            "description": a.description,
+            "book_value": a.book_value,
+            "liquidation_recovery_pct": a.liquidation_recovery_pct,
+            "liquidation_value": a.liquidation_value,
+        }
+        for a in assets_rows
+    ]
+
+    creditors_total = sum(float(c.amount_claimed) for c in creditors)
+
+    plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "est_liquidator_fees": plan_row.est_liquidator_fees,
+        "est_legal_fees": plan_row.est_legal_fees,
+        "est_disbursements": plan_row.est_disbursements,
+    }
+
+    result = comparison_engine.calculate(assets, creditors_total, plan)
+    return result
+
+
+@app.get(
+    "/api/engagements/{company_id}/payment-schedule",
+    tags=["SBR Calculations"],
+)
+async def get_payment_schedule(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate payment schedule from stored plan parameters.
+    Returns PaymentScheduleResult.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    if not plan_row:
+        raise HTTPException(
+            status_code=400,
+            detail="Plan parameters required before generating payment schedule",
+        )
+
+    plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "num_initial_payments": plan_row.num_initial_payments,
+        "initial_payment_amount": plan_row.initial_payment_amount,
+        "num_ongoing_payments": plan_row.num_ongoing_payments,
+        "ongoing_payment_amount": plan_row.ongoing_payment_amount,
+    }
+
+    try:
+        result = payment_schedule_generator.generate(plan)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return result
 
 
 # Serve generated documents
