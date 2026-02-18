@@ -7,13 +7,15 @@ accounting integration architecture.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
 import tempfile
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 from typing import Optional
 
 import sqlalchemy as sa
@@ -33,13 +35,14 @@ from models.schemas import (
     DocumentResponse,
     FirmProfile,
     ForensicReport,
+    NarrativeSection,
     PreferencePaymentReport,
     RelatedPartyReport,
     SolvencyScore,
     Transaction,
 )
 from db.database import async_engine, Base, get_db
-from db.models import AssetDB, CompanyDB, CreditorDB, PlanParametersDB
+from db.models import AssetDB, CompanyDB, CreditorDB, EntityMapDB, NarrativeDB, PlanParametersDB
 from services.file_parser import FileParser
 from services.creditor_schedule import CreditorScheduleService
 from services.comparison_engine import ComparisonEngine
@@ -1300,6 +1303,716 @@ async def get_payment_schedule(
         raise HTTPException(status_code=400, detail=str(exc))
 
     return result
+
+
+# ===================================================================
+# Narrative Generation endpoints (2.3)
+# ===================================================================
+
+VALID_SECTIONS = {
+    "background", "distress_events", "expert_advice",
+    "plan_summary", "viability", "comparison_commentary",
+}
+
+GLOSSARY_DIR = Path(__file__).resolve().parent / "data" / "glossaries"
+
+
+class NarrativeGenerateRequest(BaseModel):
+    """Request body for generating narrative sections."""
+    director_notes: str
+    industry: Optional[str] = None
+    custom_terms: Optional[dict[str, str]] = None
+
+
+class NarrativeSectionRequest(BaseModel):
+    """Request body for single section regeneration."""
+    director_notes: Optional[str] = None
+    industry: Optional[str] = None
+    custom_terms: Optional[dict[str, str]] = None
+
+
+class NarrativePatchRequest(BaseModel):
+    """Request body for updating/approving a narrative section."""
+    content: Optional[str] = None
+    status: Optional[str] = None
+
+
+class CustomTermsRequest(BaseModel):
+    """Request body for adding custom glossary terms."""
+    terms: dict[str, str]
+
+
+async def _load_engagement_data(
+    db: AsyncSession, company_id, plan_row=None, comparison_result=None
+) -> dict:
+    """Build engagement_data dict from DB for narrative generation."""
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == company_id)
+    )
+    company = result.scalar_one_or_none()
+    if not company:
+        return {}
+
+    data = {
+        "company_name": company.legal_name,
+        "acn": company.acn,
+        "abn": company.abn,
+    }
+
+    if plan_row:
+        data.update({
+            "total_contribution": plan_row.total_contribution,
+            "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+            "num_initial_payments": plan_row.num_initial_payments,
+            "initial_payment_amount": plan_row.initial_payment_amount,
+            "num_ongoing_payments": plan_row.num_ongoing_payments,
+            "ongoing_payment_amount": plan_row.ongoing_payment_amount,
+        })
+
+    return data
+
+
+@app.post("/api/engagements/{company_id}/narrative", tags=["Narrative"])
+async def generate_narrative(
+    company_id: str,
+    req: NarrativeGenerateRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate all 6 narrative sections from director notes.
+    Pipeline: validate → scrub PII → load engagement data → generate → store → return.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Validate director_notes
+    if not req.director_notes or not req.director_notes.strip():
+        raise HTTPException(status_code=400, detail="director_notes is required and cannot be empty")
+
+    # Validate engagement exists
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Load plan parameters
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+
+    # Scrub PII from director notes
+    from services.privacy_vault import scrub, restore
+
+    scrub_result = scrub(req.director_notes)
+
+    # Build engagement data
+    engagement_data = {
+        "company_name": company.legal_name,
+        "acn": company.acn,
+        "abn": company.abn,
+    }
+    if plan_row:
+        engagement_data.update({
+            "total_contribution": plan_row.total_contribution,
+            "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+            "num_initial_payments": plan_row.num_initial_payments,
+            "initial_payment_amount": plan_row.initial_payment_amount,
+            "num_ongoing_payments": plan_row.num_ongoing_payments,
+            "ongoing_payment_amount": plan_row.ongoing_payment_amount,
+        })
+
+    # Load comparison data if available
+    comparison_data = None
+    if plan_row:
+        try:
+            # Load assets and creditors for comparison
+            asset_result = await db.execute(
+                sa.select(AssetDB).where(AssetDB.company_id == cid)
+            )
+            assets_rows = asset_result.scalars().all()
+
+            cred_result = await db.execute(
+                sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+            )
+            creditors = cred_result.scalars().all()
+
+            if assets_rows and creditors:
+                assets = [
+                    {
+                        "asset_type": a.asset_type,
+                        "description": a.description,
+                        "book_value": a.book_value,
+                        "liquidation_recovery_pct": a.liquidation_recovery_pct,
+                        "liquidation_value": a.liquidation_value,
+                    }
+                    for a in assets_rows
+                ]
+                stored_total = float(company.total_creditors or 0)
+                creditors_total = stored_total if stored_total > 0 else sum(float(c.amount_claimed) for c in creditors)
+                plan = {
+                    "total_contribution": plan_row.total_contribution,
+                    "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+                    "est_liquidator_fees": plan_row.est_liquidator_fees,
+                    "est_legal_fees": plan_row.est_legal_fees,
+                    "est_disbursements": plan_row.est_disbursements,
+                }
+                comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
+        except Exception:
+            logger.warning("Could not load comparison data for narrative generation")
+
+    # Initialize Claude client and narrative generator
+    try:
+        from services.claude_client import ClaudeClient
+        from services.narrative_generator import NarrativeGenerator
+
+        claude_client = ClaudeClient()
+        # Merge custom terms with engagement-level terms
+        custom_terms = req.custom_terms or {}
+        if company.custom_glossary:
+            merged_terms = {**company.custom_glossary, **custom_terms}
+        else:
+            merged_terms = custom_terms
+
+        generator = NarrativeGenerator(
+            claude_client=claude_client,
+            industry=req.industry,
+            custom_terms=merged_terms or None,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=f"Claude API unavailable: {exc}")
+
+    # Generate all 6 sections, handling partial failures
+    section_generators = {
+        "background": lambda: generator.generate_background(
+            scrub_result.scrubbed_text, engagement_data
+        ),
+        "distress_events": lambda: generator.generate_distress_events(
+            scrub_result.scrubbed_text, engagement_data
+        ),
+        "expert_advice": lambda: generator.generate_expert_advice(engagement_data),
+        "plan_summary": lambda: generator.generate_plan_summary(
+            engagement_data, comparison_data or {}
+        ),
+        "viability": lambda: generator.generate_viability(
+            scrub_result.scrubbed_text, engagement_data
+        ),
+        "comparison_commentary": lambda: generator.generate_comparison_commentary(
+            comparison_data or {}
+        ),
+    }
+
+    sections = []
+    for section_name, gen_func in section_generators.items():
+        try:
+            output = await gen_func()
+            content = restore(output["content"], scrub_result.entity_map)
+            metadata = output["metadata"]
+            requires_input_flags = metadata.get("requires_input_flags", [])
+            unknown_terms = metadata.get("unknown_terms_flagged", [])
+
+            # Delete existing section for this engagement if any
+            await db.execute(
+                sa.delete(NarrativeDB).where(
+                    NarrativeDB.engagement_id == cid,
+                    NarrativeDB.section == section_name,
+                )
+            )
+
+            # Store in NarrativeDB
+            narrative = NarrativeDB(
+                engagement_id=cid,
+                section=section_name,
+                content=content,
+                status="draft",
+                metadata_=metadata,
+                entity_map=scrub_result.entity_map,
+            )
+            db.add(narrative)
+            await db.flush()
+
+            # Store entity map in EntityMapDB
+            entity_map_record = EntityMapDB(
+                engagement_id=cid,
+                entity_map=scrub_result.entity_map,
+                section=section_name,
+            )
+            db.add(entity_map_record)
+
+            sections.append(NarrativeSection(
+                section=section_name,
+                content=content,
+                status="draft",
+                metadata_=metadata,
+                requires_input_flags=requires_input_flags,
+                unknown_terms=unknown_terms,
+            ))
+        except Exception as exc:
+            logger.error("Failed to generate section '%s': %s", section_name, exc)
+            sections.append(NarrativeSection(
+                section=section_name,
+                content=f"[ERROR: Failed to generate — {exc}]",
+                status="error",
+                metadata_={"error": str(exc)},
+                requires_input_flags=[],
+                unknown_terms=[],
+            ))
+
+    await db.flush()
+
+    return {
+        "engagement_id": str(cid),
+        "sections": [s.model_dump() for s in sections],
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+@app.post("/api/engagements/{company_id}/narrative/{section}", tags=["Narrative"])
+async def generate_single_section(
+    company_id: str,
+    section: str,
+    req: NarrativeSectionRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Regenerate a single narrative section. If director_notes is omitted,
+    reuses previously stored notes (from entity map).
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    if section not in VALID_SECTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid section name '{section}'. Valid sections: {sorted(VALID_SECTIONS)}",
+        )
+
+    # Validate engagement exists
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Get director notes — from request or from stored narrative
+    director_notes = req.director_notes
+    if not director_notes:
+        raise HTTPException(
+            status_code=400,
+            detail="director_notes is required for section regeneration",
+        )
+
+    from services.privacy_vault import scrub, restore
+
+    scrub_result = scrub(director_notes)
+
+    # Load plan parameters
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+
+    engagement_data = {
+        "company_name": company.legal_name,
+        "acn": company.acn,
+        "abn": company.abn,
+    }
+    if plan_row:
+        engagement_data.update({
+            "total_contribution": plan_row.total_contribution,
+            "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+            "num_initial_payments": plan_row.num_initial_payments,
+            "initial_payment_amount": plan_row.initial_payment_amount,
+            "num_ongoing_payments": plan_row.num_ongoing_payments,
+            "ongoing_payment_amount": plan_row.ongoing_payment_amount,
+        })
+
+    comparison_data = None
+    if plan_row:
+        try:
+            asset_result = await db.execute(
+                sa.select(AssetDB).where(AssetDB.company_id == cid)
+            )
+            assets_rows = asset_result.scalars().all()
+            cred_result = await db.execute(
+                sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+            )
+            creditors = cred_result.scalars().all()
+            if assets_rows and creditors:
+                assets = [
+                    {
+                        "asset_type": a.asset_type,
+                        "description": a.description,
+                        "book_value": a.book_value,
+                        "liquidation_recovery_pct": a.liquidation_recovery_pct,
+                        "liquidation_value": a.liquidation_value,
+                    }
+                    for a in assets_rows
+                ]
+                stored_total = float(company.total_creditors or 0)
+                creditors_total = stored_total if stored_total > 0 else sum(float(c.amount_claimed) for c in creditors)
+                plan = {
+                    "total_contribution": plan_row.total_contribution,
+                    "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+                    "est_liquidator_fees": plan_row.est_liquidator_fees,
+                    "est_legal_fees": plan_row.est_legal_fees,
+                    "est_disbursements": plan_row.est_disbursements,
+                }
+                comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
+        except Exception:
+            logger.warning("Could not load comparison data for section regeneration")
+
+    try:
+        from services.claude_client import ClaudeClient
+        from services.narrative_generator import NarrativeGenerator
+
+        claude_client = ClaudeClient()
+        custom_terms = req.custom_terms or {}
+        if company.custom_glossary:
+            merged_terms = {**company.custom_glossary, **custom_terms}
+        else:
+            merged_terms = custom_terms
+
+        generator = NarrativeGenerator(
+            claude_client=claude_client,
+            industry=req.industry,
+            custom_terms=merged_terms or None,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=f"Claude API unavailable: {exc}")
+
+    # Map section to generator method
+    gen_map = {
+        "background": lambda: generator.generate_background(scrub_result.scrubbed_text, engagement_data),
+        "distress_events": lambda: generator.generate_distress_events(scrub_result.scrubbed_text, engagement_data),
+        "expert_advice": lambda: generator.generate_expert_advice(engagement_data),
+        "plan_summary": lambda: generator.generate_plan_summary(engagement_data, comparison_data or {}),
+        "viability": lambda: generator.generate_viability(scrub_result.scrubbed_text, engagement_data),
+        "comparison_commentary": lambda: generator.generate_comparison_commentary(comparison_data or {}),
+    }
+
+    try:
+        output = await gen_map[section]()
+        content = restore(output["content"], scrub_result.entity_map)
+        metadata = output["metadata"]
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=f"Claude API unavailable: {exc}")
+
+    # Delete existing section
+    await db.execute(
+        sa.delete(NarrativeDB).where(
+            NarrativeDB.engagement_id == cid,
+            NarrativeDB.section == section,
+        )
+    )
+
+    # Store
+    narrative = NarrativeDB(
+        engagement_id=cid,
+        section=section,
+        content=content,
+        status="draft",
+        metadata_=metadata,
+        entity_map=scrub_result.entity_map,
+    )
+    db.add(narrative)
+    await db.flush()
+
+    entity_map_record = EntityMapDB(
+        engagement_id=cid,
+        entity_map=scrub_result.entity_map,
+        section=section,
+    )
+    db.add(entity_map_record)
+
+    requires_input_flags = metadata.get("requires_input_flags", [])
+    unknown_terms = metadata.get("unknown_terms_flagged", [])
+
+    return NarrativeSection(
+        section=section,
+        content=content,
+        status="draft",
+        metadata_=metadata,
+        requires_input_flags=requires_input_flags,
+        unknown_terms=unknown_terms,
+    ).model_dump()
+
+
+@app.patch("/api/engagements/{company_id}/narrative/{section}", tags=["Narrative"])
+async def update_narrative_section(
+    company_id: str,
+    section: str,
+    req: NarrativePatchRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update or approve a narrative section. Supports status transitions:
+    draft -> reviewed -> approved, and approved -> draft.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    if section not in VALID_SECTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid section name '{section}'. Valid sections: {sorted(VALID_SECTIONS)}",
+        )
+
+    # Find the narrative section
+    result = await db.execute(
+        sa.select(NarrativeDB).where(
+            NarrativeDB.engagement_id == cid,
+            NarrativeDB.section == section,
+        )
+    )
+    narrative = result.scalar_one_or_none()
+    if not narrative:
+        raise HTTPException(status_code=404, detail=f"Narrative section '{section}' not found for this engagement")
+
+    # Update content if provided
+    if req.content is not None:
+        narrative.content = req.content
+
+    # Update status if provided
+    if req.status is not None:
+        valid_statuses = {"draft", "reviewed", "approved"}
+        if req.status not in valid_statuses:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid status '{req.status}'. Valid statuses: {sorted(valid_statuses)}",
+            )
+        narrative.status = req.status
+
+    await db.flush()
+
+    return NarrativeSection(
+        section=narrative.section,
+        content=narrative.content,
+        status=narrative.status,
+        metadata_=narrative.metadata_,
+        requires_input_flags=narrative.metadata_.get("requires_input_flags", []) if narrative.metadata_ else [],
+        unknown_terms=narrative.metadata_.get("unknown_terms_flagged", []) if narrative.metadata_ else [],
+    ).model_dump()
+
+
+@app.get("/api/engagements/{company_id}/narrative", tags=["Narrative"])
+async def get_all_narrative_sections(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get all narrative sections for an engagement with summary metadata.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Verify engagement exists
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Load all narrative sections
+    result = await db.execute(
+        sa.select(NarrativeDB).where(NarrativeDB.engagement_id == cid)
+    )
+    narratives = result.scalars().all()
+
+    sections = []
+    total_requires_input = 0
+    total_unknown_terms = 0
+    for n in narratives:
+        ri_flags = n.metadata_.get("requires_input_flags", []) if n.metadata_ else []
+        ut_flags = n.metadata_.get("unknown_terms_flagged", []) if n.metadata_ else []
+        total_requires_input += len(ri_flags)
+        total_unknown_terms += len(ut_flags)
+        sections.append(NarrativeSection(
+            section=n.section,
+            content=n.content,
+            status=n.status,
+            metadata_=n.metadata_,
+            requires_input_flags=ri_flags,
+            unknown_terms=ut_flags,
+        ).model_dump())
+
+    all_approved = (
+        len(narratives) == len(VALID_SECTIONS)
+        and all(n.status == "approved" for n in narratives)
+    )
+
+    return {
+        "engagement_id": str(cid),
+        "sections": sections,
+        "all_approved": all_approved,
+        "requires_input_count": total_requires_input,
+        "unknown_terms_count": total_unknown_terms,
+    }
+
+
+@app.get("/api/engagements/{company_id}/narrative/{section}", tags=["Narrative"])
+async def get_single_narrative_section(
+    company_id: str,
+    section: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single narrative section."""
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    if section not in VALID_SECTIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid section name '{section}'. Valid sections: {sorted(VALID_SECTIONS)}",
+        )
+
+    result = await db.execute(
+        sa.select(NarrativeDB).where(
+            NarrativeDB.engagement_id == cid,
+            NarrativeDB.section == section,
+        )
+    )
+    narrative = result.scalar_one_or_none()
+    if not narrative:
+        raise HTTPException(status_code=404, detail=f"Narrative section '{section}' not found for this engagement")
+
+    return NarrativeSection(
+        section=narrative.section,
+        content=narrative.content,
+        status=narrative.status,
+        metadata_=narrative.metadata_,
+        requires_input_flags=narrative.metadata_.get("requires_input_flags", []) if narrative.metadata_ else [],
+        unknown_terms=narrative.metadata_.get("unknown_terms_flagged", []) if narrative.metadata_ else [],
+    ).model_dump()
+
+
+# ===================================================================
+# Glossary endpoints (2.3)
+# ===================================================================
+
+
+@app.get("/api/glossary/insolvency", tags=["Glossary"])
+async def get_insolvency_glossary():
+    """Return the Layer 1 insolvency glossary terms."""
+    glossary_path = GLOSSARY_DIR / "insolvency_layer1.json"
+    if not glossary_path.exists():
+        raise HTTPException(status_code=500, detail="Insolvency glossary file not found")
+
+    with open(glossary_path) as f:
+        data = json.load(f)
+
+    terms = data.get("terms", {})
+    return {
+        "layer": "insolvency",
+        "term_count": len(terms),
+        "terms": terms,
+    }
+
+
+@app.get("/api/glossary/{industry}", tags=["Glossary"])
+async def get_industry_glossary(industry: str):
+    """Return the Layer 2 industry glossary for a given industry."""
+    glossary_path = GLOSSARY_DIR / f"{industry}_layer2.json"
+    if not glossary_path.exists():
+        # List available industries
+        available = []
+        for f in GLOSSARY_DIR.glob("*_layer2.json"):
+            available.append(f.stem.replace("_layer2", ""))
+        raise HTTPException(
+            status_code=404,
+            detail={"message": f"Industry glossary '{industry}' not found", "available_industries": sorted(available)},
+        )
+
+    with open(glossary_path) as f:
+        data = json.load(f)
+
+    terms = data.get("terms", {})
+    return {
+        "layer": industry,
+        "term_count": len(terms),
+        "terms": terms,
+    }
+
+
+@app.post("/api/engagements/{company_id}/glossary/terms", tags=["Glossary"])
+async def add_custom_terms(
+    company_id: str,
+    req: CustomTermsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Add client-specific terms (Layer 3) for an engagement.
+    Returns the merged glossary (Layer 1 + Layer 2 + Layer 3).
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Verify engagement exists
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Merge with existing custom glossary
+    existing = company.custom_glossary or {}
+    existing.update(req.terms)
+    company.custom_glossary = existing
+    await db.flush()
+
+    # Build merged glossary (Layer 1 + Layer 2 + Layer 3)
+    merged: dict[str, str] = {}
+
+    # Layer 1
+    layer1_path = GLOSSARY_DIR / "insolvency_layer1.json"
+    if layer1_path.exists():
+        with open(layer1_path) as f:
+            data = json.load(f)
+        merged.update(data.get("terms", {}))
+
+    # Layer 2 — check all available
+    for f in GLOSSARY_DIR.glob("*_layer2.json"):
+        with open(f) as fh:
+            data = json.load(fh)
+        merged.update(data.get("terms", {}))
+
+    # Layer 3 — custom terms
+    merged.update(existing)
+
+    return {
+        "engagement_id": str(cid),
+        "custom_terms": existing,
+        "merged_glossary": merged,
+        "total_terms": len(merged),
+    }
 
 
 # Serve generated documents

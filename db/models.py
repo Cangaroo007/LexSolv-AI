@@ -51,6 +51,9 @@ class CompanyDB(Base):
     total_liabilities = Column(Numeric(15, 2), default=0)
     total_creditors = Column(Numeric(15, 2), default=0)
 
+    # Custom glossary for narrative generation (Layer 3 terms)
+    custom_glossary = Column(JSONB, nullable=True)
+
     # Integration metadata
     source = Column(String(50), nullable=True)  # 'xero' or 'myob'
     external_id = Column(String(255), nullable=True)
