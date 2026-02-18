@@ -414,3 +414,75 @@ class DocumentResponse(BaseModel):
     generated_at: datetime
     company_name: str
     practitioner_name: str
+
+
+# ---------------------------------------------------------------------------
+# Comparison Engine & Payment Schedule — schemas (Prompt 1.3)
+# ---------------------------------------------------------------------------
+
+
+class AssetEntry(BaseModel):
+    """A single asset line for SBR vs Liquidation comparison."""
+
+    asset_type: str  # 'cash', 'receivables', 'inventory', 'loans_related', 'loans_shareholder', 'equipment', 'goodwill'
+    description: str
+    book_value: float
+    liquidation_recovery_pct: float  # e.g., 0.20 for 20%
+    liquidation_value: float  # book_value * recovery_pct (or manual override)
+    notes: str = ""
+    source: str = "parsed"
+
+
+class PlanParameters(BaseModel):
+    """Configurable parameters for an SBR plan proposal."""
+
+    total_contribution: float
+    practitioner_fee_pct: float = 10.0
+    num_initial_payments: int = 2
+    initial_payment_amount: float = 0.0
+    num_ongoing_payments: int = 22
+    ongoing_payment_amount: float = 0.0
+    est_liquidator_fees: float = 50000.0
+    est_legal_fees: float = 10000.0
+    est_disbursements: float = 5000.0
+
+
+class ComparisonLine(BaseModel):
+    """A single row in the SBR vs Liquidation comparison table."""
+
+    description: str
+    note_number: Optional[int] = None
+    sbr_value: Optional[float] = None
+    liquidation_value: Optional[float] = None
+
+
+class ComparisonResult(BaseModel):
+    """Full SBR vs Liquidation comparison output (Annexure G format)."""
+
+    lines: list[ComparisonLine]
+    notes: list[str]
+    sbr_available: float
+    sbr_dividend_cents: float
+    liquidation_available: float
+    liquidation_dividend_cents: float
+    total_creditor_claims: float
+
+
+class PaymentScheduleEntry(BaseModel):
+    """A single instalment in the payment schedule."""
+
+    payment_number: int
+    month_label: str
+    due_date: Optional[str] = None
+    net_dividend: float
+    practitioner_fee: float
+    total_payment: float
+
+
+class PaymentScheduleResult(BaseModel):
+    """Complete payment schedule output."""
+
+    entries: list[PaymentScheduleEntry]
+    total_contribution: float
+    total_fees: float
+    total_net_dividend: float
