@@ -21,6 +21,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    JSON,
     Numeric,
     String,
     Text,
@@ -335,3 +336,38 @@ class EntityMapDB(Base):
 
     def __repr__(self) -> str:
         return f"<EntityMap engagement={self.engagement_id} section={self.section}>"
+
+
+# ---------------------------------------------------------------------------
+# Narrative — AI-generated Company Offer Statement sections (2.2)
+# ---------------------------------------------------------------------------
+
+class NarrativeDB(Base):
+    __tablename__ = "narratives"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    engagement_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    section = Column(String, nullable=False)  # background, distress_events, expert_advice, plan_summary, viability, comparison_commentary
+    content = Column(Text, nullable=False)
+    status = Column(String, default="draft")  # draft, reviewed, approved
+    metadata_ = Column(JSON, nullable=True)  # source tracking from narrative generator
+    entity_map = Column(JSON, nullable=True)  # PII entity map for this section
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships
+    company = relationship("CompanyDB", backref="narratives")
+
+    __table_args__ = (
+        Index("ix_narratives_engagement_section", "engagement_id", "section"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<Narrative engagement={self.engagement_id} section={self.section} status={self.status}>"

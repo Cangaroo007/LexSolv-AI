@@ -1,0 +1,21 @@
+{
+  "terms": {
+    "SBR": "Small Business Restructuring \u2014 a formal restructuring process under Part 5.3B of the Corporations Act 2001",
+    "ROCAP": "Report on Company Activities and Property \u2014 statutory form lodged with ASIC",
+    "DIRRI": "Declaration of Independence, Relevant Relationships and Indemnities",
+    "RATA": "Remuneration Approval by Time and Activity \u2014 basis for practitioner fee approval",
+    "preferential_payment": "A payment made to a creditor within 6 months before the relation-back day that gives the creditor more than they would receive in a winding up",
+    "relation_back_day": "The date from which certain pre-appointment transactions may be voidable \u2014 typically the date the restructuring practitioner is appointed",
+    "dividend": "The amount payable to creditors from funds available for distribution, expressed as cents in the dollar",
+    "proof_of_debt": "A formal claim lodged by a creditor setting out the amount owed and the basis of the debt",
+    "secured_creditor": "A creditor who holds a security interest (such as a PPSR registration) over company property",
+    "unsecured_creditor": "A creditor without a security interest \u2014 ranks behind secured creditors and employee entitlements",
+    "related_party": "A person or entity connected to the company as defined in s 9 of the Corporations Act \u2014 includes directors, their relatives, and entities they control",
+    "deed_of_company_arrangement": "DOCA \u2014 a binding arrangement between a company and its creditors as an alternative to liquidation",
+    "insolvent_trading": "Trading while unable to pay debts as and when they fall due \u2014 potential personal liability for directors under s 588G",
+    "safe_harbour": "Protection from insolvent trading liability under s 588GA where directors pursue a course of action reasonably likely to lead to a better outcome",
+    "company_offer_statement": "The document prepared by the restructuring practitioner setting out the proposed restructuring plan for creditors to vote on",
+    "voting_period": "The 15 business day period during which creditors may vote to accept or reject the restructuring plan",
+    "restructuring_practitioner": "RP \u2014 the registered liquidator appointed to oversee the SBR process"
+  }
+}

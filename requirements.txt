@@ -35,3 +35,6 @@ python-dotenv>=1.0.1
 # File parsing — CSV / Excel
 pandas>=2.2.0
 openpyxl>=3.1.0
+
+# AI — Claude API for narrative generation
+anthropic>=0.40.0
