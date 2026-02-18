@@ -42,6 +42,7 @@ class CreditorStatus(str, Enum):
     DISPUTED = "disputed"
     WRITTEN_OFF = "written_off"
     PAID = "paid"
+    FORGIVEN = "forgiven"
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +113,12 @@ class CreditorEntry(BaseModel):
     # Traceability
     source_invoice_ids: list[str] = Field(default_factory=list, description="Invoice IDs from accounting system")
     notes: Optional[str] = None
+
+    # SBR-specific fields (Prompt 1.2)
+    is_related_party: bool = False
+    is_secured: bool = False
+    can_vote: bool = True
+    source: str = "manual"
 
 
 class CreditorList(BaseModel):
