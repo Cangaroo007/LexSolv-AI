@@ -1322,6 +1322,7 @@ class NarrativeGenerateRequest(BaseModel):
     director_notes: str
     industry: Optional[str] = None
     custom_terms: Optional[dict[str, str]] = None
+    known_entities: Optional[dict[str, list[str]]] = None
 
 
 class NarrativeSectionRequest(BaseModel):
@@ -1329,6 +1330,7 @@ class NarrativeSectionRequest(BaseModel):
     director_notes: Optional[str] = None
     industry: Optional[str] = None
     custom_terms: Optional[dict[str, str]] = None
+    known_entities: Optional[dict[str, list[str]]] = None
 
 
 class NarrativePatchRequest(BaseModel):
@@ -1410,7 +1412,18 @@ async def generate_narrative(
     # Scrub PII from director notes
     from services.privacy_vault import scrub, restore
 
-    scrub_result = scrub(req.director_notes)
+    # Build known entities from DB + request for more thorough PII scrubbing
+    known = req.known_entities or {}
+    if company.legal_name:
+        known.setdefault("counterparty", [])
+        if company.legal_name not in known["counterparty"]:
+            known["counterparty"].append(company.legal_name)
+    if getattr(company, "trading_name", None) and company.trading_name != company.legal_name:
+        known.setdefault("counterparty", [])
+        if company.trading_name not in known["counterparty"]:
+            known["counterparty"].append(company.trading_name)
+
+    scrub_result = scrub(req.director_notes, known_entities=known if known else None)
 
     # Build engagement data
     engagement_data = {
@@ -1555,11 +1568,32 @@ async def generate_narrative(
             ))
         except Exception as exc:
             logger.error("Failed to generate section '%s': %s", section_name, exc)
+            error_content = f"[ERROR: Failed to generate — {exc}]"
+            error_metadata = {"error": str(exc)}
+
+            # Persist error sections so they can be edited/approved via PATCH
+            await db.execute(
+                sa.delete(NarrativeDB).where(
+                    NarrativeDB.engagement_id == cid,
+                    NarrativeDB.section == section_name,
+                )
+            )
+            narrative = NarrativeDB(
+                engagement_id=cid,
+                section=section_name,
+                content=error_content,
+                status="error",
+                metadata_=error_metadata,
+                entity_map=scrub_result.entity_map,
+            )
+            db.add(narrative)
+            await db.flush()
+
             sections.append(NarrativeSection(
                 section=section_name,
-                content=f"[ERROR: Failed to generate — {exc}]",
+                content=error_content,
                 status="error",
-                metadata_={"error": str(exc)},
+                metadata_=error_metadata,
                 requires_input_flags=[],
                 unknown_terms=[],
             ))
@@ -1615,7 +1649,18 @@ async def generate_single_section(
 
     from services.privacy_vault import scrub, restore
 
-    scrub_result = scrub(director_notes)
+    # Build known entities from DB + request
+    known = req.known_entities or {}
+    if company.legal_name:
+        known.setdefault("counterparty", [])
+        if company.legal_name not in known["counterparty"]:
+            known["counterparty"].append(company.legal_name)
+    if getattr(company, "trading_name", None) and company.trading_name != company.legal_name:
+        known.setdefault("counterparty", [])
+        if company.trading_name not in known["counterparty"]:
+            known["counterparty"].append(company.trading_name)
+
+    scrub_result = scrub(director_notes, known_entities=known if known else None)
 
     # Load plan parameters
     plan_result = await db.execute(
