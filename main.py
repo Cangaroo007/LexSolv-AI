@@ -32,6 +32,8 @@ from models.schemas import (
     CompanyData,
     CreditorList,
     DIRRIRequest,
+    DocumentOutputEntry,
+    DocumentOutputListResponse,
     DocumentResponse,
     FirmProfile,
     ForensicReport,
@@ -42,7 +44,7 @@ from models.schemas import (
     Transaction,
 )
 from db.database import async_engine, Base, get_db
-from db.models import AssetDB, CompanyDB, CreditorDB, EntityMapDB, NarrativeDB, PlanParametersDB
+from db.models import AssetDB, CompanyDB, CreditorDB, DocumentOutputDB, EntityMapDB, NarrativeDB, PlanParametersDB
 from services.file_parser import FileParser
 from services.creditor_schedule import CreditorScheduleService
 from services.comparison_engine import ComparisonEngine
@@ -2058,6 +2060,526 @@ async def add_custom_terms(
         "merged_glossary": merged,
         "total_terms": len(merged),
     }
+
+
+# ===================================================================
+# Document Download + Generation endpoints (3.2)
+# ===================================================================
+
+
+async def _track_document_output(
+    db: AsyncSession,
+    engagement_id,
+    document_type: str,
+    filename: str,
+    metadata: dict | None = None,
+) -> DocumentOutputDB:
+    """Track a generated document in DocumentOutputDB with auto-incrementing version."""
+    import uuid as _uuid
+
+    # Find max existing version for this engagement + document type
+    result = await db.execute(
+        sa.select(sa.func.max(DocumentOutputDB.version)).where(
+            DocumentOutputDB.engagement_id == engagement_id,
+            DocumentOutputDB.document_type == document_type,
+        )
+    )
+    max_version = result.scalar_one_or_none() or 0
+    new_version = max_version + 1
+
+    record = DocumentOutputDB(
+        engagement_id=engagement_id,
+        document_type=document_type,
+        version=new_version,
+        filename=filename,
+        metadata_=metadata,
+    )
+    db.add(record)
+    await db.flush()
+    return record
+
+
+def _safe_company_name(name: str) -> str:
+    """Sanitize company name for use in filenames: replace spaces with underscores, strip special chars."""
+    import re
+    safe = re.sub(r"[^\w\s-]", "", name)
+    safe = re.sub(r"\s+", "_", safe.strip())
+    return safe[:40]
+
+
+def _au_date_str(d: date | None = None) -> str:
+    """Format date as DDMMYYYY for Australian-style filenames."""
+    d = d or date.today()
+    return d.strftime("%d%m%Y")
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/comparison",
+    tags=["Document Generation"],
+    summary="Generate Annexure G comparison .docx",
+)
+async def generate_comparison_download(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate the Annexure G — Comparison of Estimated Return to Creditors
+    document and return as a downloadable .docx file.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # 1. Validate engagement exists
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # 2. Load comparison data (need assets, creditors, plan params)
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    if not plan_row:
+        raise HTTPException(status_code=400, detail="Set plan parameters first")
+
+    cred_result = await db.execute(
+        sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+    )
+    creditors = cred_result.scalars().all()
+    if not creditors:
+        raise HTTPException(status_code=400, detail="Run comparison first")
+
+    asset_result = await db.execute(
+        sa.select(AssetDB).where(AssetDB.company_id == cid)
+    )
+    assets_rows = asset_result.scalars().all()
+    if not assets_rows:
+        raise HTTPException(status_code=400, detail="Run comparison first")
+
+    # Build dicts for comparison engine
+    assets = [
+        {
+            "asset_type": a.asset_type,
+            "description": a.description,
+            "book_value": a.book_value,
+            "liquidation_recovery_pct": a.liquidation_recovery_pct,
+            "liquidation_value": a.liquidation_value,
+        }
+        for a in assets_rows
+    ]
+    stored_total = float(company.total_creditors or 0)
+    creditors_total = stored_total if stored_total > 0 else sum(float(c.amount_claimed) for c in creditors)
+
+    plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "est_liquidator_fees": plan_row.est_liquidator_fees,
+        "est_legal_fees": plan_row.est_legal_fees,
+        "est_disbursements": plan_row.est_disbursements,
+    }
+
+    comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
+
+    # 3. Generate .docx via document generator
+    filepath = document_generator.generate_comparison_docx(
+        comparison_data=comparison_data,
+        company_name=company.legal_name,
+        acn=company.acn,
+    )
+
+    # 4. Build canonical filename
+    safe_name = _safe_company_name(company.legal_name)
+    date_str = _au_date_str()
+    canonical_filename = f"{safe_name}_Annexure_G_Comparison_{date_str}.docx"
+
+    # 5. Track in DocumentOutputDB
+    import hashlib
+    data_hash = hashlib.sha256(json.dumps(comparison_data, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    await _track_document_output(
+        db, cid, "comparison", canonical_filename,
+        metadata={"data_hash": data_hash},
+    )
+    await db.commit()
+
+    # 6. Return as FileResponse
+    return FileResponse(
+        path=str(filepath),
+        filename=canonical_filename,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/payment-schedule",
+    tags=["Document Generation"],
+    summary="Generate payment schedule .docx",
+)
+async def generate_payment_schedule_download(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate the Payment Schedule document and return as a downloadable .docx file.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # 1. Validate engagement exists
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # 2. Load plan parameters
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    if not plan_row:
+        raise HTTPException(status_code=400, detail="Set plan parameters first")
+
+    # 3. Generate payment schedule data
+    plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "num_initial_payments": plan_row.num_initial_payments,
+        "initial_payment_amount": plan_row.initial_payment_amount,
+        "num_ongoing_payments": plan_row.num_ongoing_payments,
+        "ongoing_payment_amount": plan_row.ongoing_payment_amount,
+    }
+
+    try:
+        schedule_data = payment_schedule_generator.generate(plan)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # 4. Generate .docx
+    filepath = document_generator.generate_payment_schedule_docx(
+        schedule_data=schedule_data,
+        company_name=company.legal_name,
+    )
+
+    # 5. Build canonical filename
+    safe_name = _safe_company_name(company.legal_name)
+    date_str = _au_date_str()
+    canonical_filename = f"{safe_name}_Payment_Schedule_{date_str}.docx"
+
+    # 6. Track in DocumentOutputDB
+    import hashlib
+    data_hash = hashlib.sha256(json.dumps(schedule_data, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    await _track_document_output(
+        db, cid, "payment_schedule", canonical_filename,
+        metadata={"data_hash": data_hash},
+    )
+    await db.commit()
+
+    # 7. Return as FileResponse
+    return FileResponse(
+        path=str(filepath),
+        filename=canonical_filename,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/company-statement",
+    tags=["Document Generation"],
+    summary="Generate Company Offer Statement .docx",
+)
+async def generate_company_statement_download(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate the Company Offer Statement from narrative sections
+    and return as a downloadable .docx file.
+
+    Includes X-Draft-Sections header if any sections are unapproved.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # 1. Validate engagement exists
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # 2. Load narrative sections
+    narrative_result = await db.execute(
+        sa.select(NarrativeDB).where(NarrativeDB.engagement_id == cid)
+    )
+    narratives = narrative_result.scalars().all()
+    if not narratives:
+        raise HTTPException(status_code=400, detail="Generate narratives first")
+
+    # 3. Convert to dicts for generator
+    sections = [
+        {
+            "section": n.section,
+            "content": n.content,
+            "status": n.status,
+        }
+        for n in narratives
+    ]
+
+    # Check for unapproved sections
+    draft_sections = [n.section for n in narratives if n.status != "approved"]
+
+    # 4. Generate .docx
+    filepath = document_generator.generate_company_statement_docx(
+        sections=sections,
+        company_name=company.legal_name,
+        acn=company.acn,
+    )
+
+    # 5. Build canonical filename
+    safe_name = _safe_company_name(company.legal_name)
+    date_str = _au_date_str()
+    canonical_filename = f"{safe_name}_Company_Offer_Statement_{date_str}.docx"
+
+    # 6. Track in DocumentOutputDB
+    section_statuses = {n.section: n.status for n in narratives}
+    await _track_document_output(
+        db, cid, "company_statement", canonical_filename,
+        metadata={"section_statuses": section_statuses},
+    )
+    await db.commit()
+
+    # 7. Return as FileResponse with draft header if applicable
+    from starlette.responses import FileResponse as StarletteFileResponse
+
+    response = FileResponse(
+        path=str(filepath),
+        filename=canonical_filename,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    if draft_sections:
+        response.headers["X-Draft-Sections"] = ",".join(draft_sections)
+
+    return response
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/all",
+    tags=["Document Generation"],
+    summary="Generate all SBR documents as ZIP",
+)
+async def generate_all_documents_download(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate all three SBR documents (comparison, payment schedule,
+    company statement) and return as a ZIP archive.
+    """
+    import uuid as _uuid
+    import zipfile
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # 1. Validate engagement exists
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    safe_name = _safe_company_name(company.legal_name)
+    date_str = _au_date_str()
+
+    # 2. Generate comparison document
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    if not plan_row:
+        raise HTTPException(status_code=400, detail="Set plan parameters first")
+
+    cred_result = await db.execute(
+        sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+    )
+    creditors = cred_result.scalars().all()
+    if not creditors:
+        raise HTTPException(status_code=400, detail="Run comparison first")
+
+    asset_result = await db.execute(
+        sa.select(AssetDB).where(AssetDB.company_id == cid)
+    )
+    assets_rows = asset_result.scalars().all()
+    if not assets_rows:
+        raise HTTPException(status_code=400, detail="Run comparison first")
+
+    assets = [
+        {
+            "asset_type": a.asset_type,
+            "description": a.description,
+            "book_value": a.book_value,
+            "liquidation_recovery_pct": a.liquidation_recovery_pct,
+            "liquidation_value": a.liquidation_value,
+        }
+        for a in assets_rows
+    ]
+    stored_total = float(company.total_creditors or 0)
+    creditors_total = stored_total if stored_total > 0 else sum(float(c.amount_claimed) for c in creditors)
+
+    plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "est_liquidator_fees": plan_row.est_liquidator_fees,
+        "est_legal_fees": plan_row.est_legal_fees,
+        "est_disbursements": plan_row.est_disbursements,
+    }
+
+    comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
+    comparison_filepath = document_generator.generate_comparison_docx(
+        comparison_data=comparison_data,
+        company_name=company.legal_name,
+        acn=company.acn,
+    )
+    comparison_filename = f"{safe_name}_Annexure_G_Comparison_{date_str}.docx"
+
+    # 3. Generate payment schedule document
+    schedule_plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "num_initial_payments": plan_row.num_initial_payments,
+        "initial_payment_amount": plan_row.initial_payment_amount,
+        "num_ongoing_payments": plan_row.num_ongoing_payments,
+        "ongoing_payment_amount": plan_row.ongoing_payment_amount,
+    }
+
+    try:
+        schedule_data = payment_schedule_generator.generate(schedule_plan)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    payment_filepath = document_generator.generate_payment_schedule_docx(
+        schedule_data=schedule_data,
+        company_name=company.legal_name,
+    )
+    payment_filename = f"{safe_name}_Payment_Schedule_{date_str}.docx"
+
+    # 4. Generate company statement document
+    narrative_result = await db.execute(
+        sa.select(NarrativeDB).where(NarrativeDB.engagement_id == cid)
+    )
+    narratives = narrative_result.scalars().all()
+    if not narratives:
+        raise HTTPException(status_code=400, detail="Generate narratives first")
+
+    sections = [
+        {
+            "section": n.section,
+            "content": n.content,
+            "status": n.status,
+        }
+        for n in narratives
+    ]
+
+    statement_filepath = document_generator.generate_company_statement_docx(
+        sections=sections,
+        company_name=company.legal_name,
+        acn=company.acn,
+    )
+    statement_filename = f"{safe_name}_Company_Offer_Statement_{date_str}.docx"
+
+    # 5. Bundle into ZIP
+    tmp_dir = tempfile.mkdtemp()
+    zip_filename = f"{safe_name}_SBR_Documents_{date_str}.zip"
+    zip_path = os.path.join(tmp_dir, zip_filename)
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(str(comparison_filepath), comparison_filename)
+        zf.write(str(payment_filepath), payment_filename)
+        zf.write(str(statement_filepath), statement_filename)
+
+    # 6. Track all three in DocumentOutputDB
+    await _track_document_output(db, cid, "comparison", comparison_filename)
+    await _track_document_output(db, cid, "payment_schedule", payment_filename)
+    section_statuses = {n.section: n.status for n in narratives}
+    await _track_document_output(
+        db, cid, "company_statement", statement_filename,
+        metadata={"section_statuses": section_statuses},
+    )
+    await db.commit()
+
+    # 7. Return ZIP as FileResponse
+    return FileResponse(
+        path=zip_path,
+        filename=zip_filename,
+        media_type="application/zip",
+    )
+
+
+@app.get(
+    "/api/engagements/{company_id}/documents",
+    response_model=DocumentOutputListResponse,
+    tags=["Document Generation"],
+    summary="List generated documents for an engagement",
+)
+async def list_engagement_documents(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    List all generated documents for an engagement, including version history.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Validate engagement exists
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Load all document outputs
+    doc_result = await db.execute(
+        sa.select(DocumentOutputDB)
+        .where(DocumentOutputDB.engagement_id == cid)
+        .order_by(DocumentOutputDB.generated_at.desc())
+    )
+    docs = doc_result.scalars().all()
+
+    return DocumentOutputListResponse(
+        engagement_id=str(cid),
+        documents=[
+            DocumentOutputEntry(
+                id=str(d.id),
+                document_type=d.document_type,
+                version=d.version,
+                filename=d.filename,
+                generated_at=d.generated_at,
+                metadata_=d.metadata_,
+            )
+            for d in docs
+        ],
+    )
 
 
 # Serve generated documents
