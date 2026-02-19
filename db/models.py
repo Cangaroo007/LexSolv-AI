@@ -374,3 +374,35 @@ class NarrativeDB(Base):
 
     def __repr__(self) -> str:
         return f"<Narrative engagement={self.engagement_id} section={self.section} status={self.status}>"
+
+
+# ---------------------------------------------------------------------------
+# DocumentOutput — tracks generated .docx files with version history (3.2)
+# ---------------------------------------------------------------------------
+
+class DocumentOutputDB(Base):
+    __tablename__ = "document_outputs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    engagement_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    document_type = Column(String, nullable=False)  # comparison, payment_schedule, company_statement
+    version = Column(Integer, default=1)
+    filename = Column(String, nullable=False)
+    generated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    generated_by = Column(String, nullable=True)  # placeholder for future auth
+    metadata_ = Column(JSON, nullable=True)  # source data hashes, section statuses, etc.
+
+    # Relationships
+    company = relationship("CompanyDB", backref="document_outputs")
+
+    __table_args__ = (
+        Index("ix_document_outputs_engagement_type", "engagement_id", "document_type"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<DocumentOutput {self.document_type} v{self.version} engagement={self.engagement_id}>"

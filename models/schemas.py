@@ -510,3 +510,26 @@ class NarrativeResponse(BaseModel):
     engagement_id: str
     sections: List[NarrativeSection]
     generated_at: str
+
+
+# ---------------------------------------------------------------------------
+# Document Output Tracking — schemas (Prompt 3.2)
+# ---------------------------------------------------------------------------
+
+
+class DocumentOutputEntry(BaseModel):
+    """A single tracked document output record."""
+
+    id: str
+    document_type: str
+    version: int
+    filename: str
+    generated_at: datetime
+    metadata_: Optional[dict] = None
+
+
+class DocumentOutputListResponse(BaseModel):
+    """Response listing all generated documents for an engagement."""
+
+    engagement_id: str
+    documents: List[DocumentOutputEntry]
