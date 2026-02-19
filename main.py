@@ -870,10 +870,12 @@ async def create_engagement(data: dict, db: AsyncSession = Depends(get_db)):
     """
     Create new SBR engagement. Creates a company record if needed.
     Body: {"company_name": "...", "acn": "...", "abn": "...",
-           "appointment_date": "...", "practitioner_name": "..."}
+           "appointment_date": "...", "practitioner_name": "...",
+           "industry": "..."}
     Returns the company record with ID.
     """
     import re
+    from datetime import date as _date
 
     company_name = (data.get("company_name") or "").strip()
     if not company_name:
@@ -888,10 +890,26 @@ async def create_engagement(data: dict, db: AsyncSession = Depends(get_db)):
     acn = re.sub(r"\D", "", raw_acn)[:9] or None
     abn = re.sub(r"\D", "", raw_abn)[:11] or None
 
+    # Parse appointment_date (accepts ISO YYYY-MM-DD string)
+    raw_appt = data.get("appointment_date")
+    appointment_date = None
+    if raw_appt:
+        try:
+            appointment_date = _date.fromisoformat(str(raw_appt))
+        except (ValueError, TypeError):
+            pass  # leave as None if unparseable
+
+    # Accept both "practitioner_name" and "practitioner" from clients
+    practitioner_name = data.get("practitioner_name") or data.get("practitioner") or None
+    industry = data.get("industry") or None
+
     company = CompanyDB(
         legal_name=company_name,
         acn=acn,
         abn=abn,
+        appointment_date=appointment_date,
+        practitioner_name=practitioner_name,
+        industry=industry,
         source="sbr",
     )
     db.add(company)
@@ -904,8 +922,9 @@ async def create_engagement(data: dict, db: AsyncSession = Depends(get_db)):
         "company_name": company.legal_name,
         "acn": company.acn,
         "abn": company.abn,
-        "appointment_date": data.get("appointment_date"),
-        "practitioner_name": data.get("practitioner_name"),
+        "appointment_date": str(company.appointment_date) if company.appointment_date else None,
+        "practitioner_name": company.practitioner_name,
+        "industry": company.industry,
         "created_at": str(company.created_at) if company.created_at else None,
     }
 
@@ -949,6 +968,9 @@ async def get_engagement(company_id: str, db: AsyncSession = Depends(get_db)):
             "legal_name": company.legal_name,
             "acn": company.acn,
             "abn": company.abn,
+            "appointment_date": str(company.appointment_date) if company.appointment_date else None,
+            "practitioner_name": company.practitioner_name,
+            "industry": company.industry,
         },
         "creditors": [
             {

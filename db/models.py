@@ -91,6 +91,11 @@ class CompanyDB(Base):
     abn = Column(String(11), nullable=True, index=True)
     acn = Column(String(9), nullable=True, index=True)
 
+    # SBR engagement fields
+    appointment_date = Column(Date, nullable=True)
+    practitioner_name = Column(String(255), nullable=True)
+    industry = Column(String(100), nullable=True)
+
     # Financial snapshot
     total_assets = Column(Numeric(15, 2), default=0)
     total_liabilities = Column(Numeric(15, 2), default=0)
