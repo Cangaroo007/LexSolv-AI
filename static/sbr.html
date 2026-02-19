@@ -1,0 +1,1952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LexSolv AI — Small Business Restructuring</title>
+<style>
+/* ============================================================
+   BASE STYLES
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --brand-50: #eff6ff;
+    --brand-100: #dbeafe;
+    --brand-200: #bfdbfe;
+    --brand-500: #3b82f6;
+    --brand-600: #2563eb;
+    --brand-700: #1d4ed8;
+    --brand-800: #1e3a5f;
+    --brand-900: #0f172a;
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-muted: #94a3b8;
+    --border: #e2e8f0;
+    --bg-page: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-input: #f8fafc;
+    --amber-50: #fffbeb;
+    --amber-100: #fef3c7;
+    --amber-500: #f59e0b;
+    --amber-600: #d97706;
+    --red-50: #fef2f2;
+    --red-500: #ef4444;
+    --red-600: #dc2626;
+    --green-50: #f0fdf4;
+    --green-500: #22c55e;
+    --green-600: #16a34a;
+    --override-bg: #FFF8E1;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.header {
+    background: var(--brand-900);
+    color: #fff;
+    padding: 0 1.5rem;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+}
+.header-brand {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+.header-brand h1 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--brand-500);
+    letter-spacing: -.01em;
+}
+.header-brand span {
+    font-size: .75rem;
+    color: var(--text-muted);
+}
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+.header-actions a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: .8rem;
+    padding: .35rem .75rem;
+    border-radius: 6px;
+    transition: background .15s, color .15s;
+}
+.header-actions a:hover { background: rgba(255,255,255,.08); color: #fff; }
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 1.5rem;
+}
+
+/* ============================================================
+   ENGAGEMENT BAR
+   ============================================================ */
+.engagement-bar {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+.engagement-bar .sep { color: var(--text-muted); }
+
+/* ============================================================
+   CARDS (PANELS)
+   ============================================================ */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 1.25rem;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .875rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-page);
+    border-radius: 8px 8px 0 0;
+}
+.card-header h2 {
+    font-size: .9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+.card-header h2 .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    background: var(--brand-600);
+    color: #fff;
+    border-radius: 50%;
+    font-size: .7rem;
+    font-weight: 700;
+}
+.card-body { padding: 1.25rem; }
+
+.card.disabled { opacity: .5; pointer-events: none; }
+
+/* ============================================================
+   FORM ELEMENTS
+   ============================================================ */
+label {
+    display: block;
+    font-size: .78rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: .25rem;
+}
+input[type="text"],
+input[type="number"],
+input[type="date"],
+select,
+textarea {
+    width: 100%;
+    padding: .5rem .625rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: .85rem;
+    color: var(--text-primary);
+    background: var(--bg-input);
+    transition: border-color .15s, box-shadow .15s;
+    font-family: inherit;
+}
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--brand-500);
+    box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+}
+textarea { resize: vertical; }
+
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: .875rem;
+}
+.form-group { display: flex; flex-direction: column; }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .4rem;
+    padding: .5rem 1rem;
+    font-size: .82rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s, opacity .15s;
+    font-family: inherit;
+    white-space: nowrap;
+}
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--brand-600); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--brand-700); }
+.btn-secondary {
+    background: var(--bg-page);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+.btn-secondary:hover:not(:disabled) { background: var(--border); }
+.btn-sm { padding: .3rem .6rem; font-size: .76rem; }
+.btn-icon {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 6px;
+    background: var(--bg-page);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .85rem;
+    transition: background .15s;
+}
+.btn-icon:hover:not(:disabled) { background: var(--border); }
+.btn-download { background: var(--brand-50); color: var(--brand-700); border: 1px solid var(--brand-200); }
+.btn-download:hover:not(:disabled) { background: var(--brand-100); }
+
+/* ============================================================
+   TABLES
+   ============================================================ */
+.table-wrap { overflow-x: auto; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .82rem;
+}
+th {
+    text-align: left;
+    padding: .55rem .625rem;
+    background: var(--bg-page);
+    font-weight: 600;
+    font-size: .76rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: .03em;
+    border-bottom: 2px solid var(--border);
+    white-space: nowrap;
+}
+td {
+    padding: .5rem .625rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+tbody tr:hover { background: var(--brand-50); }
+
+td input, td select {
+    padding: .3rem .4rem;
+    font-size: .82rem;
+    border: 1px solid transparent;
+    background: transparent;
+    border-radius: 4px;
+    width: 100%;
+}
+td input:hover, td select:hover {
+    border-color: var(--border);
+    background: var(--bg-input);
+}
+td input:focus, td select:focus {
+    border-color: var(--brand-500);
+    background: var(--bg-card);
+    box-shadow: 0 0 0 2px rgba(59,130,246,.1);
+}
+td input[type="checkbox"] { width: auto; }
+
+/* ============================================================
+   OVERRIDE HIGHLIGHTING (Rule 30)
+   ============================================================ */
+.overridden {
+    background: var(--override-bg) !important;
+    border-color: var(--amber-500) !important;
+}
+.source-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .2rem;
+    font-size: .68rem;
+    padding: .1rem .35rem;
+    border-radius: 3px;
+    white-space: nowrap;
+}
+.source-badge.parsed {
+    background: var(--brand-50);
+    color: var(--brand-700);
+}
+.source-badge.manual {
+    background: var(--amber-100);
+    color: var(--amber-600);
+}
+
+/* ============================================================
+   FILE DROP ZONES
+   ============================================================ */
+.upload-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: .875rem;
+}
+.drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 1.25rem .75rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+    position: relative;
+}
+.drop-zone:hover { border-color: var(--brand-500); background: var(--brand-50); }
+.drop-zone.dragover { border-color: var(--brand-600); background: var(--brand-100); }
+.drop-zone.uploaded { border-color: var(--green-500); background: var(--green-50); }
+.drop-zone.error { border-color: var(--red-500); background: var(--red-50); }
+.drop-zone .dz-icon { font-size: 1.5rem; margin-bottom: .35rem; }
+.drop-zone .dz-label { font-size: .78rem; font-weight: 600; color: var(--text-primary); }
+.drop-zone .dz-hint { font-size: .7rem; color: var(--text-muted); margin-top: .2rem; }
+.drop-zone .dz-status {
+    font-size: .72rem;
+    margin-top: .4rem;
+    font-weight: 500;
+}
+.drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+/* ============================================================
+   NARRATIVE SECTIONS
+   ============================================================ */
+.narrative-section {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: .875rem;
+}
+.narrative-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .6rem .875rem;
+    background: var(--bg-page);
+    border-bottom: 1px solid var(--border);
+    border-radius: 6px 6px 0 0;
+    gap: .5rem;
+    flex-wrap: wrap;
+}
+.narrative-section-header .section-title {
+    font-size: .82rem;
+    font-weight: 600;
+}
+.narrative-section-header .section-controls {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+.narrative-section-body { padding: .875rem; }
+.narrative-section-body textarea {
+    min-height: 120px;
+    font-size: .82rem;
+    line-height: 1.6;
+}
+.narrative-flags {
+    margin-top: .5rem;
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+}
+.flag-item {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    font-size: .76rem;
+    color: var(--amber-600);
+    background: var(--amber-50);
+    padding: .3rem .5rem;
+    border-radius: 4px;
+}
+
+/* Status selects */
+.status-select {
+    padding: .25rem .4rem;
+    font-size: .74rem;
+    border-radius: 4px;
+    font-weight: 500;
+}
+.status-select.status-draft { background: var(--bg-page); color: var(--text-secondary); border-color: var(--border); }
+.status-select.status-reviewed { background: var(--brand-50); color: var(--brand-700); border-color: var(--brand-200); }
+.status-select.status-approved { background: var(--green-50); color: var(--green-600); border-color: #bbf7d0; }
+.status-select.status-error { background: var(--red-50); color: var(--red-600); border-color: #fecaca; }
+
+/* ============================================================
+   COMPARISON TABLE
+   ============================================================ */
+.comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.comparison-stat {
+    text-align: center;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+.comparison-stat .stat-label {
+    font-size: .76rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: .25rem;
+}
+.comparison-stat .stat-value {
+    font-size: 1.35rem;
+    font-weight: 700;
+}
+.comparison-stat.sbr { background: var(--brand-50); }
+.comparison-stat.sbr .stat-value { color: var(--brand-700); }
+.comparison-stat.liq { background: var(--bg-page); }
+.comparison-stat.liq .stat-value { color: var(--text-secondary); }
+
+/* ============================================================
+   DOCUMENT HISTORY
+   ============================================================ */
+.doc-history-list {
+    list-style: none;
+    padding: 0;
+}
+.doc-history-list li {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .4rem 0;
+    font-size: .78rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+.doc-history-list li:last-child { border-bottom: none; }
+
+/* ============================================================
+   INLINE ERRORS
+   ============================================================ */
+.inline-error {
+    color: var(--red-600);
+    background: var(--red-50);
+    border: 1px solid #fecaca;
+    padding: .5rem .75rem;
+    border-radius: 6px;
+    font-size: .8rem;
+    margin-top: .75rem;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+.inline-error .dismiss {
+    margin-left: auto;
+    cursor: pointer;
+    font-size: .9rem;
+    color: var(--red-500);
+    background: none;
+    border: none;
+    padding: .1rem .3rem;
+}
+
+/* ============================================================
+   SPINNER
+   ============================================================ */
+.spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--brand-600);
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   TOTALS ROW
+   ============================================================ */
+.totals-row {
+    display: flex;
+    justify-content: flex-end;
+    padding: .625rem 1.25rem;
+    font-size: .85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    background: var(--bg-page);
+    border-top: 2px solid var(--border);
+    border-radius: 0 0 8px 8px;
+}
+
+/* ============================================================
+   UTILITY
+   ============================================================ */
+.mt-sm { margin-top: .5rem; }
+.mt-md { margin-top: .875rem; }
+.flex-end { display: flex; justify-content: flex-end; gap: .5rem; }
+.text-muted { color: var(--text-muted); font-size: .78rem; }
+.hidden { display: none !important; }
+.approved-counter {
+    font-size: .8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- HEADER                                                        -->
+<!-- ============================================================ -->
+<header class="header">
+    <div class="header-inner">
+        <div class="header-brand">
+            <h1>LEXSOLV AI</h1>
+            <span>Small Business Restructuring</span>
+        </div>
+        <div class="header-actions">
+            <a href="/static/index.html">&larr; Dashboard</a>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<!-- ENGAGEMENT BAR                                                -->
+<!-- ============================================================ -->
+<div class="engagement-bar">
+    <button class="btn btn-primary" onclick="resetEngagement()">New Engagement</button>
+    <span class="sep">|</span>
+    <label style="margin-bottom:0;display:inline;font-size:.82rem;">Load Engagement:</label>
+    <input type="text" id="load-engagement-id" placeholder="Paste engagement ID" style="width:320px;display:inline;">
+    <button class="btn btn-secondary" onclick="loadEngagement()">Load</button>
+    <span id="engagement-id-display" class="text-muted"></span>
+</div>
+
+<!-- ============================================================ -->
+<!-- ① ENGAGEMENT DETAILS                                          -->
+<!-- ============================================================ -->
+<div class="card" id="panel-engagement">
+    <div class="card-header">
+        <h2><span class="step">1</span> Engagement Details</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="company-name">Company Name</label>
+                <input type="text" id="company-name" placeholder="e.g. BTC Health Pty Ltd">
+            </div>
+            <div class="form-group">
+                <label for="acn">ACN</label>
+                <input type="text" id="acn" placeholder="000 000 000" maxlength="11">
+            </div>
+            <div class="form-group">
+                <label for="abn">ABN</label>
+                <input type="text" id="abn" placeholder="00 000 000 000" maxlength="14">
+            </div>
+            <div class="form-group">
+                <label for="appointment-date">Appointment Date</label>
+                <input type="date" id="appointment-date">
+            </div>
+            <div class="form-group">
+                <label for="practitioner-name">Practitioner</label>
+                <input type="text" id="practitioner-name" placeholder="e.g. John Smith">
+            </div>
+            <div class="form-group">
+                <label for="industry">Industry</label>
+                <select id="industry">
+                    <option value="">— Select —</option>
+                    <option value="medical">Medical</option>
+                    <option value="construction">Construction</option>
+                    <option value="hospitality">Hospitality</option>
+                    <option value="retail">Retail</option>
+                    <option value="transport">Transport</option>
+                    <option value="professional_services">Professional Services</option>
+                    <option value="manufacturing">Manufacturing</option>
+                    <option value="agriculture">Agriculture</option>
+                </select>
+            </div>
+        </div>
+        <div class="flex-end mt-md">
+            <button class="btn btn-primary" id="btn-save-engagement" onclick="saveEngagement()">Save Engagement</button>
+        </div>
+        <div id="error-engagement"></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ② FILE UPLOAD                                                 -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-upload">
+    <div class="card-header">
+        <h2><span class="step">2</span> File Upload</h2>
+    </div>
+    <div class="card-body">
+        <div class="upload-grid">
+            <div class="drop-zone" id="dz-aged-payables" data-endpoint="/api/upload/aged-payables" data-type="aged-payables">
+                <div class="dz-icon">📊</div>
+                <div class="dz-label">Aged Payables</div>
+                <div class="dz-hint">Drop CSV / Excel</div>
+                <div class="dz-status" id="dz-status-aged-payables"></div>
+                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'aged-payables')">
+            </div>
+            <div class="drop-zone" id="dz-balance-sheet" data-endpoint="/api/upload/balance-sheet" data-type="balance-sheet">
+                <div class="dz-icon">📋</div>
+                <div class="dz-label">Balance Sheet</div>
+                <div class="dz-hint">Drop CSV / Excel</div>
+                <div class="dz-status" id="dz-status-balance-sheet"></div>
+                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'balance-sheet')">
+            </div>
+            <div class="drop-zone" id="dz-bank-statement" data-endpoint="/api/upload/bank-statement" data-type="bank-statement">
+                <div class="dz-icon">🏦</div>
+                <div class="dz-label">Bank Statement</div>
+                <div class="dz-hint">Drop CSV / Excel</div>
+                <div class="dz-status" id="dz-status-bank-statement"></div>
+                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'bank-statement')">
+            </div>
+            <div class="drop-zone" id="dz-pnl" data-endpoint="/api/upload/pnl" data-type="pnl">
+                <div class="dz-icon">📈</div>
+                <div class="dz-label">P&amp;L</div>
+                <div class="dz-hint">Drop CSV / Excel</div>
+                <div class="dz-status" id="dz-status-pnl"></div>
+                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'pnl')">
+            </div>
+        </div>
+        <div id="upload-info" class="text-muted mt-md"></div>
+        <div id="error-upload"></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ③ CREDITOR SCHEDULE                                           -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-creditors">
+    <div class="card-header">
+        <h2><span class="step">3</span> Creditor Schedule</h2>
+        <button class="btn btn-sm btn-secondary" onclick="addCreditorRow()">+ Add Creditor</button>
+    </div>
+    <div class="card-body">
+        <div class="table-wrap">
+            <table id="creditor-table">
+                <thead>
+                    <tr>
+                        <th>Creditor</th>
+                        <th>Amount Claimed</th>
+                        <th>Category</th>
+                        <th>Related</th>
+                        <th>Status</th>
+                        <th>Source</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="creditor-tbody"></tbody>
+            </table>
+        </div>
+        <div class="totals-row">
+            Total Claims: <span id="creditor-total" style="margin-left:.4rem;">$0.00</span>
+        </div>
+        <div class="flex-end mt-md">
+            <button class="btn btn-primary btn-sm" onclick="saveCreditors()">Save Creditors</button>
+        </div>
+        <div id="error-creditors"></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ④ ASSET REGISTER                                              -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-assets">
+    <div class="card-header">
+        <h2><span class="step">4</span> Asset Register</h2>
+        <button class="btn btn-sm btn-secondary" onclick="addAssetRow()">+ Add Asset</button>
+    </div>
+    <div class="card-body">
+        <div class="table-wrap">
+            <table id="asset-table">
+                <thead>
+                    <tr>
+                        <th>Asset</th>
+                        <th>Book Value</th>
+                        <th>Recovery %</th>
+                        <th>Est. Recovery</th>
+                        <th>Source</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="asset-tbody"></tbody>
+            </table>
+        </div>
+        <div class="flex-end mt-md">
+            <button class="btn btn-primary btn-sm" onclick="saveAssets()">Save Assets</button>
+        </div>
+        <div id="error-assets"></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ⑤ PLAN PARAMETERS                                             -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-plan">
+    <div class="card-header">
+        <h2><span class="step">5</span> Plan Parameters</h2>
+    </div>
+    <div class="card-body">
+        <div class="form-grid">
+            <div class="form-group">
+                <label for="total-contribution">Total Contribution ($)</label>
+                <input type="number" id="total-contribution" step="0.01" placeholder="e.g. 516000">
+            </div>
+            <div class="form-group">
+                <label for="practitioner-fee-pct">Practitioner Fee (%)</label>
+                <input type="number" id="practitioner-fee-pct" value="10" step="0.1" min="0" max="100">
+            </div>
+            <div class="form-group">
+                <label for="num-initial-payments">Initial Payments (count)</label>
+                <input type="number" id="num-initial-payments" value="2" min="0">
+            </div>
+            <div class="form-group">
+                <label for="initial-payment-amount">Initial Payment Amount ($)</label>
+                <input type="number" id="initial-payment-amount" step="0.01" placeholder="e.g. 32500">
+            </div>
+            <div class="form-group">
+                <label for="num-ongoing-payments">Ongoing Payments (count)</label>
+                <input type="number" id="num-ongoing-payments" value="22" min="0">
+            </div>
+            <div class="form-group">
+                <label for="ongoing-payment-amount">Ongoing Payment Amount ($)</label>
+                <input type="number" id="ongoing-payment-amount" step="0.01" placeholder="e.g. 20500">
+            </div>
+        </div>
+        <div class="flex-end mt-md">
+            <button class="btn btn-primary" id="btn-update-plan" onclick="updatePlan()">Update Plan</button>
+        </div>
+        <div id="error-plan"></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ⑥ COMPARISON RESULT                                           -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-comparison">
+    <div class="card-header">
+        <h2><span class="step">6</span> Comparison Result</h2>
+        <button class="btn btn-primary btn-sm" id="btn-run-comparison" onclick="runComparison()">Run Comparison</button>
+    </div>
+    <div class="card-body">
+        <div id="comparison-placeholder" class="text-muted" style="text-align:center;padding:1.5rem 0;">
+            Click "Run Comparison" after saving creditors, assets, and plan parameters.
+        </div>
+        <div id="comparison-result" class="hidden">
+            <div class="comparison-grid">
+                <div class="comparison-stat sbr">
+                    <div class="stat-label">SBR Dividend</div>
+                    <div class="stat-value" id="sbr-dividend">—</div>
+                </div>
+                <div class="comparison-stat liq">
+                    <div class="stat-label">Liquidation Dividend</div>
+                    <div class="stat-value" id="liq-dividend">—</div>
+                </div>
+            </div>
+            <div class="table-wrap mt-sm">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th style="text-align:right;">SBR ($)</th>
+                            <th style="text-align:right;">Liquidation ($)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="comparison-tbody"></tbody>
+                </table>
+            </div>
+            <div id="comparison-notes" class="mt-sm"></div>
+        </div>
+        <div id="error-comparison"></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ⑦ NARRATIVE GENERATOR                                         -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-narrative">
+    <div class="card-header">
+        <h2><span class="step">7</span> Narrative Generator</h2>
+        <span class="approved-counter" id="approved-counter"></span>
+    </div>
+    <div class="card-body">
+        <div class="form-group">
+            <label for="director-notes">Director Notes</label>
+            <textarea id="director-notes" rows="6" placeholder="Paste the director's notes / background information here..."></textarea>
+        </div>
+        <div class="form-group mt-md">
+            <label for="known-entities">Known Entities (comma-separated)</label>
+            <input type="text" id="known-entities" placeholder="e.g. Dr James Mitchell, BTC Health, BlueShak">
+        </div>
+        <div class="flex-end mt-md">
+            <button class="btn btn-primary" id="btn-generate-all" onclick="generateAllNarratives()">Generate All Sections</button>
+        </div>
+        <div id="error-narrative"></div>
+
+        <div id="narrative-sections" class="mt-md"></div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ⑧ GENERATE DOCUMENTS                                          -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-documents">
+    <div class="card-header">
+        <h2><span class="step">8</span> Generate Documents</h2>
+    </div>
+    <div class="card-body">
+        <div style="display:flex;flex-wrap:wrap;gap:.625rem;">
+            <button class="btn btn-download" onclick="downloadDoc('comparison', 'Annexure_G.docx')">
+                📄 Annexure G
+            </button>
+            <button class="btn btn-download" onclick="downloadDoc('payment-schedule', 'Payment_Schedule.docx')">
+                📄 Payment Schedule
+            </button>
+            <button class="btn btn-download" onclick="downloadDoc('company-statement', 'Company_Statement.docx')">
+                📄 Company Statement
+            </button>
+            <button class="btn btn-download" onclick="downloadAll()">
+                📦 Download All (.zip)
+            </button>
+        </div>
+        <div id="error-documents" class="mt-sm"></div>
+
+        <div class="mt-md">
+            <label style="font-size:.82rem;font-weight:600;">Document History</label>
+            <ul class="doc-history-list" id="doc-history-list">
+                <li class="text-muted">No documents generated yet.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+</div><!-- /.container -->
+
+<!-- ============================================================ -->
+<!-- JAVASCRIPT                                                    -->
+<!-- ============================================================ -->
+<script>
+/* =============================================================
+   API LAYER
+   ============================================================= */
+const API = {
+    async post(path, body) {
+        const res = await fetch(path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            let msg;
+            try { msg = await res.text(); } catch { msg = res.statusText; }
+            const err = new Error(msg);
+            err.status = res.status;
+            throw err;
+        }
+        return res.json();
+    },
+
+    async upload(path, file) {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await fetch(path, { method: 'POST', body: form });
+        if (!res.ok) {
+            let msg;
+            try { msg = await res.text(); } catch { msg = res.statusText; }
+            const err = new Error(msg);
+            err.status = res.status;
+            throw err;
+        }
+        return res.json();
+    },
+
+    async get(path) {
+        const res = await fetch(path);
+        if (!res.ok) {
+            let msg;
+            try { msg = await res.text(); } catch { msg = res.statusText; }
+            const err = new Error(msg);
+            err.status = res.status;
+            throw err;
+        }
+        return res.json();
+    },
+
+    async patch(path, body) {
+        const res = await fetch(path, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+            let msg;
+            try { msg = await res.text(); } catch { msg = res.statusText; }
+            const err = new Error(msg);
+            err.status = res.status;
+            throw err;
+        }
+        return res.json();
+    },
+
+    async download(path, filename) {
+        const res = await fetch(path, { method: 'POST' });
+        if (!res.ok) {
+            let msg;
+            try { msg = await res.text(); } catch { msg = res.statusText; }
+            const err = new Error(msg);
+            err.status = res.status;
+            throw err;
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+};
+
+/* =============================================================
+   STATE
+   ============================================================= */
+let currentEngagementId = null;
+let parsedCreditors = [];       // From file upload
+let parsedAssets = [];          // From file upload
+let parsedTotalLiabilities = 0; // From balance sheet
+let narrativeSectionsData = {}; // section -> data
+let directorNotesCache = '';    // For regeneration
+
+/* =============================================================
+   ERROR DISPLAY
+   ============================================================= */
+function showError(containerId, message) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    let text = message;
+    if (text && text.length > 500) text = text.substring(0, 500) + '...';
+    container.innerHTML = `<div class="inline-error">
+        <span>⚠</span> <span>${escapeHtml(text)}</span>
+        <button class="dismiss" onclick="this.parentElement.remove()">&times;</button>
+    </div>`;
+}
+
+function clearError(containerId) {
+    const container = document.getElementById(containerId);
+    if (container) container.innerHTML = '';
+}
+
+function formatApiError(err) {
+    if (!err) return 'Unknown error';
+    if (err.status === 503) return 'AI service unavailable — check API key configuration.';
+    if (err.status === 0 || err.message === 'Failed to fetch') return 'Could not connect to server. Please check your connection.';
+    let msg = err.message || String(err);
+    // Try to extract detail from JSON error responses
+    try {
+        const parsed = JSON.parse(msg);
+        if (parsed.detail) msg = typeof parsed.detail === 'string' ? parsed.detail : JSON.stringify(parsed.detail);
+    } catch {}
+    return msg;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+/* =============================================================
+   LOADING STATE
+   ============================================================= */
+function setLoading(btn, loading, text) {
+    if (!btn) return;
+    btn.disabled = loading;
+    if (loading) {
+        btn.dataset.originalText = btn.textContent;
+        btn.innerHTML = `<span class="spinner"></span> ${text || 'Loading...'}`;
+    } else {
+        btn.textContent = btn.dataset.originalText || btn.textContent;
+    }
+}
+
+/* =============================================================
+   PANEL ENABLE/DISABLE
+   ============================================================= */
+function enablePanel(panelId) {
+    document.getElementById(panelId)?.classList.remove('disabled');
+}
+
+function enableAllPanels() {
+    ['panel-upload', 'panel-creditors', 'panel-assets', 'panel-plan',
+     'panel-comparison', 'panel-narrative', 'panel-documents'].forEach(enablePanel);
+}
+
+/* =============================================================
+   FORMATTING
+   ============================================================= */
+function formatCurrency(val) {
+    const num = parseFloat(val);
+    if (isNaN(num)) return '$0.00';
+    return '$' + num.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function formatCurrencyCell(val) {
+    const num = parseFloat(val);
+    if (isNaN(num)) return '0.00';
+    if (num < 0) return '(' + Math.abs(num).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ')';
+    return num.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* =============================================================
+   ① ENGAGEMENT
+   ============================================================= */
+function resetEngagement() {
+    currentEngagementId = null;
+    parsedCreditors = [];
+    parsedAssets = [];
+    parsedTotalLiabilities = 0;
+    narrativeSectionsData = {};
+    directorNotesCache = '';
+
+    document.getElementById('company-name').value = '';
+    document.getElementById('acn').value = '';
+    document.getElementById('abn').value = '';
+    document.getElementById('appointment-date').value = '';
+    document.getElementById('practitioner-name').value = '';
+    document.getElementById('industry').value = '';
+    document.getElementById('load-engagement-id').value = '';
+    document.getElementById('engagement-id-display').textContent = '';
+
+    document.getElementById('creditor-tbody').innerHTML = '';
+    document.getElementById('asset-tbody').innerHTML = '';
+    document.getElementById('creditor-total').textContent = '$0.00';
+    document.getElementById('comparison-result').classList.add('hidden');
+    document.getElementById('comparison-placeholder').classList.remove('hidden');
+    document.getElementById('narrative-sections').innerHTML = '';
+    document.getElementById('approved-counter').textContent = '';
+    document.getElementById('director-notes').value = '';
+    document.getElementById('known-entities').value = '';
+    document.getElementById('upload-info').textContent = '';
+
+    // Reset all drop zones
+    document.querySelectorAll('.drop-zone').forEach(dz => {
+        dz.classList.remove('uploaded', 'error');
+        const status = dz.querySelector('.dz-status');
+        if (status) status.textContent = '';
+    });
+
+    // Reset plan fields
+    document.getElementById('total-contribution').value = '';
+    document.getElementById('practitioner-fee-pct').value = '10';
+    document.getElementById('num-initial-payments').value = '2';
+    document.getElementById('initial-payment-amount').value = '';
+    document.getElementById('num-ongoing-payments').value = '22';
+    document.getElementById('ongoing-payment-amount').value = '';
+
+    // Reset doc history
+    document.getElementById('doc-history-list').innerHTML = '<li class="text-muted">No documents generated yet.</li>';
+
+    // Disable panels
+    ['panel-upload', 'panel-creditors', 'panel-assets', 'panel-plan',
+     'panel-comparison', 'panel-narrative', 'panel-documents'].forEach(id => {
+        document.getElementById(id)?.classList.add('disabled');
+    });
+
+    // Clear all errors
+    document.querySelectorAll('[id^="error-"]').forEach(el => el.innerHTML = '');
+}
+
+async function saveEngagement() {
+    const btn = document.getElementById('btn-save-engagement');
+    clearError('error-engagement');
+
+    const companyName = document.getElementById('company-name').value.trim();
+    if (!companyName) {
+        showError('error-engagement', 'Company name is required.');
+        return;
+    }
+
+    const body = {
+        company_name: companyName,
+        acn: document.getElementById('acn').value.trim() || null,
+        abn: document.getElementById('abn').value.trim() || null,
+        appointment_date: document.getElementById('appointment-date').value || null,
+        practitioner_name: document.getElementById('practitioner-name').value.trim() || null,
+    };
+
+    setLoading(btn, true, 'Saving...');
+    try {
+        let result;
+        if (currentEngagementId) {
+            // Update via patch — re-save creditors/assets to preserve; for now re-create
+            result = { id: currentEngagementId };
+        } else {
+            result = await API.post('/api/engagements', body);
+        }
+        currentEngagementId = result.id;
+        document.getElementById('engagement-id-display').textContent = 'ID: ' + currentEngagementId;
+        enableAllPanels();
+    } catch (err) {
+        showError('error-engagement', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+async function loadEngagement() {
+    const id = document.getElementById('load-engagement-id').value.trim();
+    if (!id) return;
+
+    clearError('error-engagement');
+    try {
+        const data = await API.get('/api/engagements/' + id);
+        currentEngagementId = id;
+        document.getElementById('engagement-id-display').textContent = 'ID: ' + currentEngagementId;
+
+        // Populate engagement details
+        document.getElementById('company-name').value = data.company?.legal_name || '';
+        document.getElementById('acn').value = data.company?.acn || '';
+        document.getElementById('abn').value = data.company?.abn || '';
+
+        // Populate creditors
+        if (data.creditors && data.creditors.length > 0) {
+            document.getElementById('creditor-tbody').innerHTML = '';
+            data.creditors.forEach(c => {
+                addCreditorRow({
+                    id: c.id,
+                    creditor_name: c.creditor_name,
+                    amount_claimed: c.amount_claimed,
+                    category: c.category || '',
+                    is_related_party: c.is_related_party || false,
+                    status: c.status || 'active',
+                    source: 'parsed'
+                });
+            });
+            updateCreditorTotal();
+        }
+
+        // Populate assets
+        if (data.assets && data.assets.length > 0) {
+            document.getElementById('asset-tbody').innerHTML = '';
+            data.assets.forEach(a => {
+                addAssetRow({
+                    id: a.id,
+                    asset_type: a.asset_type || a.description || '',
+                    book_value: a.book_value || 0,
+                    liquidation_recovery_pct: a.liquidation_recovery_pct || 0,
+                    liquidation_value: a.liquidation_value || 0,
+                    source: 'parsed'
+                });
+            });
+        }
+
+        // Populate plan parameters
+        if (data.plan_parameters) {
+            const p = data.plan_parameters;
+            document.getElementById('total-contribution').value = p.total_contribution || '';
+            document.getElementById('practitioner-fee-pct').value = p.practitioner_fee_pct ?? 10;
+            document.getElementById('num-initial-payments').value = p.num_initial_payments ?? 2;
+            document.getElementById('initial-payment-amount').value = p.initial_payment_amount || '';
+            document.getElementById('num-ongoing-payments').value = p.num_ongoing_payments ?? 22;
+            document.getElementById('ongoing-payment-amount').value = p.ongoing_payment_amount || '';
+        }
+
+        enableAllPanels();
+
+        // Load narratives if any
+        loadNarratives();
+        // Load doc history
+        loadDocumentHistory();
+
+    } catch (err) {
+        showError('error-engagement', formatApiError(err));
+    }
+}
+
+/* =============================================================
+   ② FILE UPLOAD
+   ============================================================= */
+function initDropZones() {
+    document.querySelectorAll('.drop-zone').forEach(dz => {
+        dz.addEventListener('dragover', e => {
+            e.preventDefault();
+            dz.classList.add('dragover');
+        });
+        dz.addEventListener('dragleave', () => {
+            dz.classList.remove('dragover');
+        });
+        dz.addEventListener('drop', e => {
+            e.preventDefault();
+            dz.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) uploadFile(dz.dataset.type, file);
+        });
+    });
+}
+
+function handleFileSelect(input, type) {
+    const file = input.files[0];
+    if (file) uploadFile(type, file);
+    input.value = '';
+}
+
+async function uploadFile(type, file) {
+    const dz = document.getElementById('dz-' + type);
+    const status = document.getElementById('dz-status-' + type);
+    clearError('error-upload');
+
+    dz.classList.remove('uploaded', 'error');
+    status.innerHTML = '<span class="spinner"></span> Uploading...';
+
+    try {
+        const endpoint = '/api/upload/' + type;
+        const result = await API.upload(endpoint, file);
+
+        dz.classList.add('uploaded');
+        status.textContent = '✅ Done';
+
+        // Process result based on type
+        if (type === 'aged-payables' && result.creditors) {
+            parsedCreditors = result.creditors;
+            document.getElementById('creditor-tbody').innerHTML = '';
+            result.creditors.forEach(c => {
+                addCreditorRow({
+                    creditor_name: c.creditor_name || c.name || '',
+                    amount_claimed: c.amount_claimed || c.amount || 0,
+                    category: c.category || '',
+                    is_related_party: c.is_related_party || false,
+                    status: c.status || 'active',
+                    source: 'parsed'
+                });
+            });
+            updateCreditorTotal();
+            status.textContent = '✅ ' + result.count + ' creditors';
+        }
+
+        if (type === 'balance-sheet' && result.assets) {
+            parsedAssets = result.assets;
+            parsedTotalLiabilities = result.total_liabilities || 0;
+            document.getElementById('asset-tbody').innerHTML = '';
+            result.assets.forEach(a => {
+                addAssetRow({
+                    asset_type: a.asset_type || a.description || '',
+                    book_value: a.book_value || 0,
+                    liquidation_recovery_pct: a.liquidation_recovery_pct || 0,
+                    liquidation_value: a.liquidation_value || 0,
+                    source: 'parsed'
+                });
+            });
+            status.textContent = '✅ ' + (result.assets.length) + ' assets';
+        }
+
+        if (type === 'bank-statement') {
+            const info = document.getElementById('upload-info');
+            const closing = result.closing_balance ?? result.balance;
+            const period = result.period || '';
+            let detail = 'Bank statement uploaded.';
+            if (closing !== undefined) detail += ' Closing balance: ' + formatCurrency(closing) + '.';
+            if (period) detail += ' Period: ' + period;
+            info.textContent = detail;
+        }
+
+        if (type === 'pnl') {
+            const info = document.getElementById('upload-info');
+            const revenue = result.total_revenue ?? result.revenue;
+            let detail = 'P&L uploaded.';
+            if (revenue !== undefined) detail += ' Revenue: ' + formatCurrency(revenue) + '.';
+            info.textContent = detail;
+        }
+
+    } catch (err) {
+        dz.classList.add('error');
+        status.textContent = '❌ Failed';
+        showError('error-upload', formatApiError(err));
+    }
+}
+
+/* =============================================================
+   ③ CREDITOR SCHEDULE
+   ============================================================= */
+const CREDITOR_CATEGORIES = [
+    '', 'ato_ita', 'ato_ica', 'ato_super', 'ato_other',
+    'trade', 'employee', 'secured', 'related_party', 'other'
+];
+
+const CREDITOR_STATUSES = ['active', 'disputed', 'written_off', 'paid', 'forgiven'];
+
+function addCreditorRow(data) {
+    const tbody = document.getElementById('creditor-tbody');
+    const row = document.createElement('tr');
+    const d = data || {};
+    const source = d.source || 'manual';
+    const origName = d.creditor_name || '';
+    const origAmount = d.amount_claimed || '';
+    const origCategory = d.category || '';
+    const serverId = d.id || '';
+
+    row.dataset.serverId = serverId;
+
+    row.innerHTML = `
+        <td><input type="text" value="${escapeHtml(String(origName))}"
+            data-field="creditor_name" data-original="${escapeHtml(String(origName))}" data-source="${source}"
+            class="${source === 'parsed' ? '' : 'overridden'}"
+            ${source === 'parsed' ? 'title="Parsed from file"' : ''}
+            onchange="markFieldOverridden(this)"></td>
+        <td><input type="number" value="${origAmount}" step="0.01"
+            data-field="amount_claimed" data-original="${origAmount}" data-source="${source}"
+            class="${source === 'parsed' ? '' : 'overridden'}"
+            ${source === 'parsed' ? 'title="Parsed from file"' : ''}
+            onchange="markFieldOverridden(this); updateCreditorTotal()"></td>
+        <td><select data-field="category" data-original="${escapeHtml(String(origCategory))}" data-source="${source}"
+            class="${source === 'parsed' ? '' : 'overridden'}"
+            onchange="markFieldOverridden(this)">
+            ${CREDITOR_CATEGORIES.map(c =>
+                `<option value="${c}" ${c === origCategory ? 'selected' : ''}>${c || '—'}</option>`
+            ).join('')}
+            </select></td>
+        <td style="text-align:center;"><input type="checkbox" data-field="is_related_party"
+            ${d.is_related_party ? 'checked' : ''} style="width:auto;"></td>
+        <td><select data-field="status" style="width:auto;min-width:70px;">
+            ${CREDITOR_STATUSES.map(s =>
+                `<option value="${s}" ${s === (d.status || 'active') ? 'selected' : ''}>${s.charAt(0).toUpperCase() + s.slice(1)}</option>`
+            ).join('')}
+            </select></td>
+        <td><span class="source-badge ${source}">${source === 'parsed' ? '📋 Parsed' : '✏️ Manual'}</span></td>
+        <td><button class="btn-icon" onclick="this.closest('tr').remove(); updateCreditorTotal();" title="Remove">&times;</button></td>
+    `;
+    tbody.appendChild(row);
+}
+
+function updateCreditorTotal() {
+    const rows = document.querySelectorAll('#creditor-tbody tr');
+    let total = 0;
+    rows.forEach(row => {
+        const inp = row.querySelector('input[data-field="amount_claimed"]');
+        if (inp) total += parseFloat(inp.value) || 0;
+    });
+    document.getElementById('creditor-total').textContent = formatCurrency(total);
+}
+
+async function saveCreditors() {
+    if (!currentEngagementId) return;
+    clearError('error-creditors');
+
+    const rows = document.querySelectorAll('#creditor-tbody tr');
+    const creditors = [];
+    rows.forEach(row => {
+        const nameInput = row.querySelector('input[data-field="creditor_name"]');
+        const amountInput = row.querySelector('input[data-field="amount_claimed"]');
+        const catSelect = row.querySelector('select[data-field="category"]');
+        const relatedInput = row.querySelector('input[data-field="is_related_party"]');
+        const statusSelect = row.querySelector('select[data-field="status"]');
+
+        creditors.push({
+            creditor_name: nameInput?.value || '',
+            amount_claimed: parseFloat(amountInput?.value) || 0,
+            category: catSelect?.value || null,
+            is_related_party: relatedInput?.checked || false,
+            status: statusSelect?.value || 'active',
+            source: nameInput?.dataset.source || 'manual',
+        });
+    });
+
+    try {
+        const result = await API.post(
+            '/api/engagements/' + currentEngagementId + '/creditors',
+            creditors
+        );
+        // Update server IDs on rows
+        if (result.creditors) {
+            const trs = document.querySelectorAll('#creditor-tbody tr');
+            result.creditors.forEach((c, i) => {
+                if (trs[i]) trs[i].dataset.serverId = c.id;
+            });
+        }
+    } catch (err) {
+        showError('error-creditors', formatApiError(err));
+    }
+}
+
+/* =============================================================
+   ④ ASSET REGISTER
+   ============================================================= */
+function addAssetRow(data) {
+    const tbody = document.getElementById('asset-tbody');
+    const row = document.createElement('tr');
+    const d = data || {};
+    const source = d.source || 'manual';
+    const origType = d.asset_type || '';
+    const origBook = d.book_value || '';
+    const origPct = d.liquidation_recovery_pct || '';
+    const estRecovery = d.liquidation_value || (parseFloat(origBook) * parseFloat(origPct) / 100) || 0;
+
+    row.innerHTML = `
+        <td><input type="text" value="${escapeHtml(String(origType))}"
+            data-field="asset_type" data-original="${escapeHtml(String(origType))}" data-source="${source}"
+            class="${source === 'parsed' ? '' : 'overridden'}"
+            onchange="markFieldOverridden(this)"></td>
+        <td><input type="number" value="${origBook}" step="0.01"
+            data-field="book_value" data-original="${origBook}" data-source="${source}"
+            class="${source === 'parsed' ? '' : 'overridden'}"
+            onchange="markFieldOverridden(this); recalcAssetRecovery(this)"></td>
+        <td><input type="number" value="${origPct}" step="0.1" min="0" max="100"
+            data-field="liquidation_recovery_pct" data-original="${origPct}" data-source="${source}"
+            class="${source === 'parsed' ? '' : 'overridden'}"
+            onchange="markFieldOverridden(this); recalcAssetRecovery(this)"></td>
+        <td class="est-recovery" style="text-align:right;font-weight:500;">
+            ${formatCurrency(estRecovery)}</td>
+        <td><span class="source-badge ${source}">${source === 'parsed' ? '📋 Parsed' : '✏️ Manual'}</span></td>
+        <td><button class="btn-icon" onclick="this.closest('tr').remove();" title="Remove">&times;</button></td>
+    `;
+    tbody.appendChild(row);
+}
+
+function recalcAssetRecovery(input) {
+    const row = input.closest('tr');
+    const bookVal = parseFloat(row.querySelector('input[data-field="book_value"]')?.value) || 0;
+    const pct = parseFloat(row.querySelector('input[data-field="liquidation_recovery_pct"]')?.value) || 0;
+    const est = bookVal * pct / 100;
+    row.querySelector('.est-recovery').textContent = formatCurrency(est);
+}
+
+async function saveAssets() {
+    if (!currentEngagementId) return;
+    clearError('error-assets');
+
+    const rows = document.querySelectorAll('#asset-tbody tr');
+    const assets = [];
+    rows.forEach(row => {
+        const typeInput = row.querySelector('input[data-field="asset_type"]');
+        const bookInput = row.querySelector('input[data-field="book_value"]');
+        const pctInput = row.querySelector('input[data-field="liquidation_recovery_pct"]');
+        const bookVal = parseFloat(bookInput?.value) || 0;
+        const pct = parseFloat(pctInput?.value) || 0;
+
+        assets.push({
+            asset_type: typeInput?.value || '',
+            description: typeInput?.value || '',
+            book_value: bookVal,
+            liquidation_recovery_pct: pct,
+            liquidation_value: bookVal * pct / 100,
+            source: typeInput?.dataset.source || 'manual',
+        });
+    });
+
+    // Build query string with total_liabilities if available
+    let url = '/api/engagements/' + currentEngagementId + '/assets';
+    if (parsedTotalLiabilities > 0) {
+        url += '?total_liabilities=' + parsedTotalLiabilities;
+    }
+
+    try {
+        await API.post(url, assets);
+    } catch (err) {
+        showError('error-assets', formatApiError(err));
+    }
+}
+
+/* =============================================================
+   OVERRIDE HIGHLIGHTING (Rule 30 — Task B)
+   ============================================================= */
+function markFieldOverridden(element) {
+    if (!element.dataset.original && element.dataset.original !== '0') return;
+
+    const currentVal = element.type === 'number' ?
+        String(parseFloat(element.value) || 0) :
+        element.value;
+    const originalVal = element.type === 'number' ?
+        String(parseFloat(element.dataset.original) || 0) :
+        element.dataset.original;
+
+    if (currentVal !== originalVal) {
+        element.classList.add('overridden');
+        element.dataset.source = 'manual';
+        element.title = 'Original parsed value: ' + element.dataset.original;
+        // Update source badge in the row
+        const row = element.closest('tr');
+        if (row) {
+            const badge = row.querySelector('.source-badge');
+            if (badge) {
+                badge.className = 'source-badge manual';
+                badge.textContent = '✏️ Manual';
+            }
+        }
+    } else {
+        element.classList.remove('overridden');
+        element.dataset.source = 'parsed';
+        element.title = 'Parsed from file';
+        const row = element.closest('tr');
+        if (row) {
+            // Only revert badge if all fields in row are parsed
+            const allParsed = Array.from(row.querySelectorAll('[data-source]')).every(
+                el => el.dataset.source === 'parsed'
+            );
+            if (allParsed) {
+                const badge = row.querySelector('.source-badge');
+                if (badge) {
+                    badge.className = 'source-badge parsed';
+                    badge.textContent = '📋 Parsed';
+                }
+            }
+        }
+    }
+}
+
+/* =============================================================
+   ⑤ PLAN PARAMETERS
+   ============================================================= */
+async function updatePlan() {
+    if (!currentEngagementId) return;
+    clearError('error-plan');
+    const btn = document.getElementById('btn-update-plan');
+
+    const plan = {
+        total_contribution: parseFloat(document.getElementById('total-contribution').value) || 0,
+        practitioner_fee_pct: parseFloat(document.getElementById('practitioner-fee-pct').value) || 10,
+        num_initial_payments: parseInt(document.getElementById('num-initial-payments').value) || 0,
+        initial_payment_amount: parseFloat(document.getElementById('initial-payment-amount').value) || 0,
+        num_ongoing_payments: parseInt(document.getElementById('num-ongoing-payments').value) || 0,
+        ongoing_payment_amount: parseFloat(document.getElementById('ongoing-payment-amount').value) || 0,
+    };
+
+    setLoading(btn, true, 'Updating...');
+    try {
+        await API.patch('/api/engagements/' + currentEngagementId + '/plan', plan);
+    } catch (err) {
+        showError('error-plan', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+/* =============================================================
+   ⑥ COMPARISON
+   ============================================================= */
+async function runComparison() {
+    if (!currentEngagementId) return;
+    clearError('error-comparison');
+    const btn = document.getElementById('btn-run-comparison');
+
+    setLoading(btn, true, 'Comparing...');
+    try {
+        const result = await API.post('/api/engagements/' + currentEngagementId + '/compare');
+
+        document.getElementById('comparison-placeholder').classList.add('hidden');
+        document.getElementById('comparison-result').classList.remove('hidden');
+
+        // Dividend display
+        const sbrDiv = result.sbr_dividend_cents ?? 0;
+        const liqDiv = result.liquidation_dividend_cents ?? 0;
+        document.getElementById('sbr-dividend').textContent =
+            sbrDiv.toFixed(1) + ' cents in the dollar';
+        document.getElementById('liq-dividend').textContent =
+            liqDiv.toFixed(1) + ' cents in the dollar';
+
+        // Comparison lines table
+        const tbody = document.getElementById('comparison-tbody');
+        tbody.innerHTML = '';
+        if (result.lines) {
+            result.lines.forEach(line => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${escapeHtml(line.label || line.description || '')}</td>
+                    <td style="text-align:right;">${formatCurrencyCell(line.sbr_value ?? line.sbr ?? '')}</td>
+                    <td style="text-align:right;">${formatCurrencyCell(line.liquidation_value ?? line.liquidation ?? '')}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Add summary rows
+        const summaryRows = [
+            { label: 'Available for Distribution', sbr: result.sbr_available, liq: result.liquidation_available },
+            { label: 'Total Creditor Claims', sbr: result.total_creditor_claims, liq: result.total_creditor_claims },
+        ];
+        summaryRows.forEach(s => {
+            if (s.sbr !== undefined) {
+                const tr = document.createElement('tr');
+                tr.style.fontWeight = '600';
+                tr.innerHTML = `
+                    <td>${escapeHtml(s.label)}</td>
+                    <td style="text-align:right;">${formatCurrencyCell(s.sbr)}</td>
+                    <td style="text-align:right;">${formatCurrencyCell(s.liq)}</td>
+                `;
+                tbody.appendChild(tr);
+            }
+        });
+
+        // Notes
+        const notesDiv = document.getElementById('comparison-notes');
+        if (result.notes && result.notes.length > 0) {
+            notesDiv.innerHTML = result.notes.map(n =>
+                `<div class="text-muted" style="font-size:.78rem;">• ${escapeHtml(n)}</div>`
+            ).join('');
+        } else {
+            notesDiv.innerHTML = '';
+        }
+
+    } catch (err) {
+        showError('error-comparison', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+/* =============================================================
+   ⑦ NARRATIVE GENERATOR
+   ============================================================= */
+const SECTION_LABELS = {
+    background: 'I — Background',
+    distress_events: 'II — Distress Events',
+    expert_advice: 'III — Expert Advice',
+    plan_summary: 'IV — Plan Summary',
+    viability: 'V — Viability Assessment',
+    comparison_commentary: 'VI — Comparison Commentary',
+};
+
+const SECTION_ORDER = [
+    'background', 'distress_events', 'expert_advice',
+    'plan_summary', 'viability', 'comparison_commentary'
+];
+
+function buildKnownEntities() {
+    const raw = document.getElementById('known-entities').value.trim();
+    if (!raw) return null;
+    const names = raw.split(',').map(s => s.trim()).filter(Boolean);
+    if (names.length === 0) return null;
+    // Send as counterparty category
+    return { counterparty: names };
+}
+
+async function generateAllNarratives() {
+    if (!currentEngagementId) return;
+    clearError('error-narrative');
+    const btn = document.getElementById('btn-generate-all');
+
+    const directorNotes = document.getElementById('director-notes').value.trim();
+    if (!directorNotes) {
+        showError('error-narrative', 'Director notes are required.');
+        return;
+    }
+    directorNotesCache = directorNotes;
+
+    const body = {
+        director_notes: directorNotes,
+        industry: document.getElementById('industry').value || null,
+        known_entities: buildKnownEntities(),
+    };
+
+    setLoading(btn, true, 'Generating...');
+    try {
+        const result = await API.post(
+            '/api/engagements/' + currentEngagementId + '/narrative',
+            body
+        );
+
+        // Store and render sections
+        narrativeSectionsData = {};
+        if (result.sections) {
+            result.sections.forEach(s => {
+                narrativeSectionsData[s.section] = s;
+            });
+        }
+        renderNarrativeSections();
+
+    } catch (err) {
+        showError('error-narrative', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+async function loadNarratives() {
+    if (!currentEngagementId) return;
+    try {
+        const result = await API.get(
+            '/api/engagements/' + currentEngagementId + '/narrative'
+        );
+        narrativeSectionsData = {};
+        if (result.sections) {
+            result.sections.forEach(s => {
+                narrativeSectionsData[s.section] = s;
+            });
+        }
+        renderNarrativeSections();
+    } catch {
+        // Narratives may not exist yet — that's fine
+    }
+}
+
+function renderNarrativeSections() {
+    const container = document.getElementById('narrative-sections');
+    container.innerHTML = '';
+
+    let approvedCount = 0;
+    const totalSections = SECTION_ORDER.length;
+
+    SECTION_ORDER.forEach(sectionKey => {
+        const data = narrativeSectionsData[sectionKey];
+        if (!data) return;
+
+        if (data.status === 'approved') approvedCount++;
+
+        const statusClass = 'status-' + (data.status || 'draft');
+
+        const div = document.createElement('div');
+        div.className = 'narrative-section';
+        div.id = 'ns-' + sectionKey;
+
+        // Flags HTML
+        let flagsHtml = '';
+        const flags = data.requires_input_flags || [];
+        const unknownTerms = data.unknown_terms || [];
+        if (flags.length > 0 || unknownTerms.length > 0) {
+            flagsHtml = '<div class="narrative-flags">';
+            flags.forEach(f => {
+                flagsHtml += `<div class="flag-item">⚠ REQUIRES INPUT: ${escapeHtml(f)}</div>`;
+            });
+            unknownTerms.forEach(t => {
+                flagsHtml += `<div class="flag-item">❓ Unknown term: ${escapeHtml(t)}</div>`;
+            });
+            flagsHtml += '</div>';
+        }
+
+        div.innerHTML = `
+            <div class="narrative-section-header">
+                <span class="section-title">Section ${SECTION_LABELS[sectionKey] || sectionKey}</span>
+                <div class="section-controls">
+                    <select class="status-select ${statusClass}" onchange="updateSectionStatus('${sectionKey}', this.value); updateStatusClass(this);">
+                        <option value="draft" ${data.status === 'draft' ? 'selected' : ''}>Draft</option>
+                        <option value="reviewed" ${data.status === 'reviewed' ? 'selected' : ''}>Reviewed</option>
+                        <option value="approved" ${data.status === 'approved' ? 'selected' : ''}>Approved</option>
+                    </select>
+                    <button class="btn-icon" onclick="regenerateSection('${sectionKey}')" title="Regenerate">↻</button>
+                </div>
+            </div>
+            <div class="narrative-section-body">
+                <textarea id="textarea-${sectionKey}" onblur="saveSectionContent('${sectionKey}')">${escapeHtml(data.content || '')}</textarea>
+                ${flagsHtml}
+            </div>
+        `;
+        container.appendChild(div);
+    });
+
+    const renderedCount = Object.keys(narrativeSectionsData).length;
+    document.getElementById('approved-counter').textContent =
+        renderedCount > 0 ? `Sections Approved: ${approvedCount}/${renderedCount}` : '';
+}
+
+function updateStatusClass(selectEl) {
+    selectEl.className = 'status-select status-' + selectEl.value;
+}
+
+async function updateSectionStatus(section, status) {
+    if (!currentEngagementId) return;
+    clearError('error-narrative');
+    try {
+        const result = await API.patch(
+            '/api/engagements/' + currentEngagementId + '/narrative/' + section,
+            { status: status }
+        );
+        if (narrativeSectionsData[section]) {
+            narrativeSectionsData[section].status = result.status || status;
+        }
+        updateApprovedCounter();
+    } catch (err) {
+        showError('error-narrative', formatApiError(err));
+    }
+}
+
+async function saveSectionContent(section) {
+    if (!currentEngagementId) return;
+    const textarea = document.getElementById('textarea-' + section);
+    if (!textarea) return;
+    const content = textarea.value;
+    // Only save if content changed
+    if (narrativeSectionsData[section]?.content === content) return;
+
+    try {
+        const result = await API.patch(
+            '/api/engagements/' + currentEngagementId + '/narrative/' + section,
+            { content: content }
+        );
+        if (narrativeSectionsData[section]) {
+            narrativeSectionsData[section].content = result.content || content;
+        }
+    } catch (err) {
+        showError('error-narrative', formatApiError(err));
+    }
+}
+
+async function regenerateSection(section) {
+    if (!currentEngagementId) return;
+    clearError('error-narrative');
+
+    const directorNotes = document.getElementById('director-notes').value.trim() || directorNotesCache;
+    if (!directorNotes) {
+        showError('error-narrative', 'Director notes are required for regeneration.');
+        return;
+    }
+
+    const sectionDiv = document.getElementById('ns-' + section);
+    const regenBtn = sectionDiv?.querySelector('.btn-icon');
+    if (regenBtn) {
+        regenBtn.disabled = true;
+        regenBtn.innerHTML = '<span class="spinner"></span>';
+    }
+
+    try {
+        const result = await API.post(
+            '/api/engagements/' + currentEngagementId + '/narrative/' + section,
+            {
+                director_notes: directorNotes,
+                industry: document.getElementById('industry').value || null,
+                known_entities: buildKnownEntities(),
+            }
+        );
+
+        narrativeSectionsData[section] = result;
+        renderNarrativeSections();
+
+    } catch (err) {
+        showError('error-narrative', formatApiError(err));
+    } finally {
+        if (regenBtn) {
+            regenBtn.disabled = false;
+            regenBtn.textContent = '↻';
+        }
+    }
+}
+
+function updateApprovedCounter() {
+    let approved = 0;
+    let total = 0;
+    SECTION_ORDER.forEach(key => {
+        if (narrativeSectionsData[key]) {
+            total++;
+            if (narrativeSectionsData[key].status === 'approved') approved++;
+        }
+    });
+    document.getElementById('approved-counter').textContent =
+        total > 0 ? `Sections Approved: ${approved}/${total}` : '';
+}
+
+/* =============================================================
+   ⑧ DOCUMENT GENERATION & DOWNLOAD
+   ============================================================= */
+async function downloadDoc(type, fallbackFilename) {
+    if (!currentEngagementId) return;
+    clearError('error-documents');
+
+    try {
+        await API.download(
+            '/api/engagements/' + currentEngagementId + '/generate/' + type,
+            fallbackFilename
+        );
+        // Refresh doc history after download
+        loadDocumentHistory();
+    } catch (err) {
+        showError('error-documents', formatApiError(err));
+    }
+}
+
+async function downloadAll() {
+    if (!currentEngagementId) return;
+    clearError('error-documents');
+
+    try {
+        await API.download(
+            '/api/engagements/' + currentEngagementId + '/generate/all',
+            'SBR_Documents.zip'
+        );
+        loadDocumentHistory();
+    } catch (err) {
+        showError('error-documents', formatApiError(err));
+    }
+}
+
+async function loadDocumentHistory() {
+    if (!currentEngagementId) return;
+
+    try {
+        const result = await API.get(
+            '/api/engagements/' + currentEngagementId + '/documents'
+        );
+        const list = document.getElementById('doc-history-list');
+
+        if (!result.documents || result.documents.length === 0) {
+            list.innerHTML = '<li class="text-muted">No documents generated yet.</li>';
+            return;
+        }
+
+        list.innerHTML = '';
+        result.documents.forEach(doc => {
+            const li = document.createElement('li');
+            const dt = doc.generated_at ? new Date(doc.generated_at) : null;
+            const dateStr = dt ? dt.toLocaleDateString('en-AU') + ' ' + dt.toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' }) : '';
+            const typeLabel = (doc.document_type || '').replace(/_/g, ' ');
+            li.textContent = `${typeLabel} v${doc.version} — ${dateStr}`;
+            list.appendChild(li);
+        });
+    } catch {
+        // Document history may not exist yet
+    }
+}
+
+/* =============================================================
+   INITIALIZATION
+   ============================================================= */
+document.addEventListener('DOMContentLoaded', () => {
+    initDropZones();
+});
+</script>
+</body>
+</html>
