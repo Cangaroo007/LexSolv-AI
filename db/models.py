@@ -1,9 +1,11 @@
 """
 LexSolv AI — SQLAlchemy ORM models.
 
-These map directly to PostgreSQL tables and correspond to the Pydantic schemas
+These map directly to database tables and correspond to the Pydantic schemas
 in models/schemas.py.  The Pydantic schemas handle API serialization; these
 ORM models handle persistence.
+
+Supports both PostgreSQL (production) and SQLite (local development).
 """
 
 from __future__ import annotations
@@ -16,7 +18,6 @@ from sqlalchemy import (
     Column,
     Date,
     DateTime,
-    Enum as SAEnum,
     Float,
     ForeignKey,
     Index,
@@ -25,12 +26,56 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    TypeDecorator,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from db.database import Base
+from db.database import Base, IS_SQLITE
+
+# ---------------------------------------------------------------------------
+# Cross-platform UUID type
+# ---------------------------------------------------------------------------
+# Uses native PostgreSQL UUID when available, falls back to CHAR(36) on SQLite.
+
+if not IS_SQLITE:
+    from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
+
+
+class UUIDType(TypeDecorator):
+    """Platform-agnostic UUID type: native UUID on PostgreSQL, CHAR(36) on SQLite."""
+    impl = String(36)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(PG_UUID(as_uuid=True))
+        return dialect.type_descriptor(String(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if isinstance(value, uuid.UUID):
+            return value
+        return uuid.UUID(str(value))
+
+
+class JSONBType(TypeDecorator):
+    """Platform-agnostic JSONB type: native JSONB on PostgreSQL, JSON on SQLite."""
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(JSONB)
+        return dialect.type_descriptor(JSON)
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +85,7 @@ from db.database import Base
 class CompanyDB(Base):
     __tablename__ = "companies"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
     legal_name = Column(String(255), nullable=False)
     trading_name = Column(String(255), nullable=True)
     abn = Column(String(11), nullable=True, index=True)
@@ -52,7 +97,7 @@ class CompanyDB(Base):
     total_creditors = Column(Numeric(15, 2), default=0)
 
     # Custom glossary for narrative generation (Layer 3 terms)
-    custom_glossary = Column(JSONB, nullable=True)
+    custom_glossary = Column(JSONBType(), nullable=True)
 
     # Integration metadata
     source = Column(String(50), nullable=True)  # 'xero' or 'myob'
@@ -85,8 +130,8 @@ class CompanyDB(Base):
 class CreditorDB(Base):
     __tablename__ = "creditors"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUIDType(), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
 
     creditor_name = Column(String(255), nullable=False)
     contact_email = Column(String(255), nullable=True)
@@ -96,15 +141,11 @@ class CreditorDB(Base):
     amount_admitted = Column(Numeric(15, 2), nullable=True)
     currency = Column(String(3), default="AUD")
 
-    status = Column(
-        SAEnum("active", "disputed", "written_off", "paid", name="creditor_status"),
-        default="active",
-        nullable=False,
-    )
-    category = Column(String(50), nullable=True)  # secured, unsecured, priority, employee
+    status = Column(String(20), default="active", nullable=False)
+    category = Column(String(50), nullable=True)
     due_date = Column(Date, nullable=True)
 
-    source_invoice_ids = Column(JSONB, default=list)  # list of strings
+    source_invoice_ids = Column(JSONBType(), default=list)
     notes = Column(Text, nullable=True)
 
     # SBR-specific fields (Prompt 1.2)
@@ -137,18 +178,11 @@ class CreditorDB(Base):
 class TransactionDB(Base):
     __tablename__ = "transactions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUIDType(), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    transaction_type = Column(
-        SAEnum("invoice", "credit_note", "payment", "journal", "bank_transaction", name="transaction_type"),
-        nullable=False,
-    )
-    status = Column(
-        SAEnum("draft", "submitted", "authorised", "paid", "voided", name="transaction_status"),
-        default="authorised",
-        nullable=False,
-    )
+    transaction_type = Column(String(30), nullable=False)
+    status = Column(String(20), default="authorised", nullable=False)
 
     reference = Column(String(255), nullable=True)
     description = Column(Text, nullable=True)
@@ -167,7 +201,7 @@ class TransactionDB(Base):
     # Integration metadata
     source = Column(String(50), nullable=True)
     external_id = Column(String(255), nullable=True)
-    raw_payload = Column(JSONB, nullable=True)
+    raw_payload = Column(JSONBType(), nullable=True)
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -193,8 +227,8 @@ class TransactionDB(Base):
 class IntegrationConnectionDB(Base):
     __tablename__ = "integration_connections"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUIDType(), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
 
     provider = Column(String(50), nullable=False)  # 'xero' or 'myob'
     tenant_id = Column(String(255), nullable=True)  # Xero tenant ID or MYOB company file ID
@@ -227,9 +261,9 @@ class IntegrationConnectionDB(Base):
 class OAuthTokenDB(Base):
     __tablename__ = "oauth_tokens"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
     connection_id = Column(
-        UUID(as_uuid=True),
+        UUIDType(),
         ForeignKey("integration_connections.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -259,8 +293,8 @@ class OAuthTokenDB(Base):
 class AssetDB(Base):
     __tablename__ = "assets"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUIDType(), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     asset_type = Column(String(50))
     description = Column(Text)
     book_value = Column(Float)
@@ -287,8 +321,8 @@ class AssetDB(Base):
 class PlanParametersDB(Base):
     __tablename__ = "plan_parameters"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    company_id = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    company_id = Column(UUIDType(), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     total_contribution = Column(Float)
     practitioner_fee_pct = Column(Float, default=10.0)
     num_initial_payments = Column(Integer, default=2)
@@ -317,14 +351,14 @@ class PlanParametersDB(Base):
 class EntityMapDB(Base):
     __tablename__ = "entity_maps"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
     engagement_id = Column(
-        UUID(as_uuid=True),
+        UUIDType(),
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    entity_map = Column(JSONB, nullable=False)
+    entity_map = Column(JSONBType(), nullable=False)
     section = Column(String(100), nullable=True)  # which narrative section
 
     # Timestamps
@@ -348,9 +382,9 @@ class EntityMapDB(Base):
 class NarrativeDB(Base):
     __tablename__ = "narratives"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
     engagement_id = Column(
-        UUID(as_uuid=True),
+        UUIDType(),
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -383,9 +417,9 @@ class NarrativeDB(Base):
 class DocumentOutputDB(Base):
     __tablename__ = "document_outputs"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
     engagement_id = Column(
-        UUID(as_uuid=True),
+        UUIDType(),
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
         index=True,

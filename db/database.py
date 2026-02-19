@@ -2,13 +2,14 @@
 LexSolv AI — Async SQLAlchemy database engine and session management.
 
 Uses asyncpg as the PostgreSQL driver for fully async I/O.
-Gracefully handles missing DATABASE_URL so the app can still start.
+Falls back to SQLite (aiosqlite) for local development when DATABASE_URL is not set.
 """
 
 from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import AsyncGenerator, Optional
 
 from sqlalchemy.ext.asyncio import (
@@ -26,14 +27,22 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Accepts DATABASE_URL in standard postgres:// or postgresql+asyncpg:// form.
 # Railway / Heroku typically provide postgres:// — we normalise it here.
+# Falls back to a local SQLite database when DATABASE_URL is not set.
 
 _raw_url = os.getenv("DATABASE_URL", "")
 DATABASE_URL: Optional[str] = None
+IS_SQLITE = False
 
 if _raw_url:
     DATABASE_URL = _raw_url.replace("postgres://", "postgresql+asyncpg://", 1)
     if "asyncpg" not in DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+else:
+    # Fall back to local SQLite for development / demo
+    _db_path = Path(__file__).resolve().parent.parent / "lexsolv_local.db"
+    DATABASE_URL = f"sqlite+aiosqlite:///{_db_path}"
+    IS_SQLITE = True
+    logger.info("No DATABASE_URL set — using local SQLite at %s", _db_path)
 
 # ---------------------------------------------------------------------------
 # Engine & session factory
@@ -43,25 +52,22 @@ async_engine: Optional[AsyncEngine] = None
 async_session_factory: Optional[async_sessionmaker] = None
 
 if DATABASE_URL:
-    async_engine = create_async_engine(
-        DATABASE_URL,
-        echo=os.getenv("SQL_ECHO", "false").lower() == "true",
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True,
-    )
+    engine_kwargs: dict = {
+        "echo": os.getenv("SQL_ECHO", "false").lower() == "true",
+    }
+    if not IS_SQLITE:
+        engine_kwargs["pool_size"] = 5
+        engine_kwargs["max_overflow"] = 10
+        engine_kwargs["pool_pre_ping"] = True
+
+    async_engine = create_async_engine(DATABASE_URL, **engine_kwargs)
 
     async_session_factory = async_sessionmaker(
         bind=async_engine,
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    logger.info("Database engine created (URL configured)")
-else:
-    logger.warning(
-        "DATABASE_URL is not set — database features are disabled. "
-        "Add a PostgreSQL database and set the DATABASE_URL environment variable."
-    )
+    logger.info("Database engine created (%s)", "SQLite" if IS_SQLITE else "PostgreSQL")
 
 
 # ---------------------------------------------------------------------------
