@@ -20,3 +20,4 @@ generated_documents/*.docx
 # OS
 .DS_Store
 Thumbs.db
+lexsolv_local.db

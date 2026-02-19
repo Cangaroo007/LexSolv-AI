@@ -43,7 +43,7 @@ from models.schemas import (
     SolvencyScore,
     Transaction,
 )
-from db.database import async_engine, Base, get_db
+from db.database import async_engine, Base, get_db, IS_SQLITE
 from db.models import AssetDB, CompanyDB, CreditorDB, DocumentOutputDB, EntityMapDB, NarrativeDB, PlanParametersDB
 from services.file_parser import FileParser
 from services.creditor_schedule import CreditorScheduleService
@@ -107,12 +107,16 @@ async def lifespan(app: FastAPI):
 
     if async_engine is not None:
         try:
-            logger.info("Connecting to PostgreSQL…")
+            db_label = "SQLite" if IS_SQLITE else "PostgreSQL"
+            logger.info("Connecting to %s…", db_label)
             async with async_engine.begin() as conn:
+                # Enable foreign keys for SQLite
+                if IS_SQLITE:
+                    await conn.execute(sa.text("PRAGMA foreign_keys = ON"))
                 # In production, use Alembic migrations instead of create_all.
                 # This is a safety net for local development.
                 await conn.run_sync(Base.metadata.create_all)
-            logger.info("Database tables verified")
+            logger.info("Database tables verified (%s)", db_label)
         except Exception as exc:
             logger.error("Could not connect to database: %s", exc)
             logger.warning("App will start without database — data endpoints will return errors")
@@ -209,6 +213,7 @@ async def reset():
 # ===================================================================
 
 @app.get("/health", tags=["System"])
+@app.get("/api/health", tags=["System"])
 async def health_check():
     # Quick DB connectivity check
     db_status = "not configured"
@@ -2479,29 +2484,30 @@ async def generate_all_documents_download(
     )
     payment_filename = f"{safe_name}_Payment_Schedule_{date_str}.docx"
 
-    # 4. Generate company statement document
+    # 4. Generate company statement document (optional — skip if no narratives yet)
     narrative_result = await db.execute(
         sa.select(NarrativeDB).where(NarrativeDB.engagement_id == cid)
     )
     narratives = narrative_result.scalars().all()
-    if not narratives:
-        raise HTTPException(status_code=400, detail="Generate narratives first")
 
-    sections = [
-        {
-            "section": n.section,
-            "content": n.content,
-            "status": n.status,
-        }
-        for n in narratives
-    ]
+    statement_filepath = None
+    statement_filename = None
+    if narratives:
+        sections = [
+            {
+                "section": n.section,
+                "content": n.content,
+                "status": n.status,
+            }
+            for n in narratives
+        ]
 
-    statement_filepath = document_generator.generate_company_statement_docx(
-        sections=sections,
-        company_name=company.legal_name,
-        acn=company.acn,
-    )
-    statement_filename = f"{safe_name}_Company_Offer_Statement_{date_str}.docx"
+        statement_filepath = document_generator.generate_company_statement_docx(
+            sections=sections,
+            company_name=company.legal_name,
+            acn=company.acn,
+        )
+        statement_filename = f"{safe_name}_Company_Offer_Statement_{date_str}.docx"
 
     # 5. Bundle into ZIP
     tmp_dir = tempfile.mkdtemp()
@@ -2511,16 +2517,18 @@ async def generate_all_documents_download(
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.write(str(comparison_filepath), comparison_filename)
         zf.write(str(payment_filepath), payment_filename)
-        zf.write(str(statement_filepath), statement_filename)
+        if statement_filepath:
+            zf.write(str(statement_filepath), statement_filename)
 
-    # 6. Track all three in DocumentOutputDB
+    # 6. Track documents in DocumentOutputDB
     await _track_document_output(db, cid, "comparison", comparison_filename)
     await _track_document_output(db, cid, "payment_schedule", payment_filename)
-    section_statuses = {n.section: n.status for n in narratives}
-    await _track_document_output(
-        db, cid, "company_statement", statement_filename,
-        metadata={"section_statuses": section_statuses},
-    )
+    if narratives and statement_filename:
+        section_statuses = {n.section: n.status for n in narratives}
+        await _track_document_output(
+            db, cid, "company_statement", statement_filename,
+            metadata={"section_statuses": section_statuses},
+        )
     await db.commit()
 
     # 7. Return ZIP as FileResponse

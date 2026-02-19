@@ -1276,10 +1276,13 @@ async function uploadFile(type, file) {
             parsedTotalLiabilities = result.total_liabilities || 0;
             document.getElementById('asset-tbody').innerHTML = '';
             result.assets.forEach(a => {
+                // API returns recovery_pct as decimal (0.2 = 20%) — convert to percentage for display
+                const pctRaw = a.liquidation_recovery_pct || 0;
+                const pctDisplay = pctRaw <= 1 ? pctRaw * 100 : pctRaw;
                 addAssetRow({
                     asset_type: a.asset_type || a.description || '',
                     book_value: a.book_value || 0,
-                    liquidation_recovery_pct: a.liquidation_recovery_pct || 0,
+                    liquidation_recovery_pct: pctDisplay,
                     liquidation_value: a.liquidation_value || 0,
                     source: 'parsed'
                 });
@@ -1474,7 +1477,7 @@ async function saveAssets() {
             asset_type: typeInput?.value || '',
             description: typeInput?.value || '',
             book_value: bookVal,
-            liquidation_recovery_pct: pct,
+            liquidation_recovery_pct: pct / 100,  // Convert percentage to decimal for engine
             liquidation_value: bookVal * pct / 100,
             source: typeInput?.dataset.source || 'manual',
         });
