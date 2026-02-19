@@ -804,7 +804,7 @@ async def upload_aged_payables(file: UploadFile):
             "count": len(creditors),
             "parse_method": parse_method,
         }
-    except ValueError as exc:
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         os.unlink(tmp_path)
@@ -826,7 +826,7 @@ async def upload_balance_sheet(file: UploadFile):
             "total_liabilities": parsed.get("total_liabilities", 0.0),
             "parse_method": "keyword_match",
         }
-    except ValueError as exc:
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         os.unlink(tmp_path)
@@ -840,7 +840,7 @@ async def upload_bank_statement(file: UploadFile):
     try:
         result = file_parser.parse_bank_statement(tmp_path)
         return result
-    except ValueError as exc:
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         os.unlink(tmp_path)
@@ -854,7 +854,7 @@ async def upload_pnl(file: UploadFile):
     try:
         result = file_parser.parse_pnl(tmp_path)
         return result
-    except ValueError as exc:
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         os.unlink(tmp_path)
@@ -1484,8 +1484,8 @@ async def generate_narrative(
                     "est_disbursements": plan_row.est_disbursements,
                 }
                 comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
-        except Exception:
-            logger.warning("Could not load comparison data for narrative generation")
+        except (ValueError, AttributeError, TypeError) as exc:
+            logger.warning("Could not load comparison data for narrative generation: %s", exc)
 
     # Initialize Claude client and narrative generator
     try:
@@ -1505,8 +1505,11 @@ async def generate_narrative(
             industry=req.industry,
             custom_terms=merged_terms or None,
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=f"Claude API unavailable: {exc}")
+    except (RuntimeError, ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"AI service unavailable — configure ANTHROPIC_API_KEY: {exc}",
+        )
 
     # Generate all 6 sections, handling partial failures
     section_generators = {
@@ -1722,8 +1725,8 @@ async def generate_single_section(
                     "est_disbursements": plan_row.est_disbursements,
                 }
                 comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
-        except Exception:
-            logger.warning("Could not load comparison data for section regeneration")
+        except (ValueError, AttributeError, TypeError) as exc:
+            logger.warning("Could not load comparison data for section regeneration: %s", exc)
 
     try:
         from services.claude_client import ClaudeClient
@@ -1741,8 +1744,11 @@ async def generate_single_section(
             industry=req.industry,
             custom_terms=merged_terms or None,
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=f"Claude API unavailable: {exc}")
+    except (RuntimeError, ValueError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"AI service unavailable — configure ANTHROPIC_API_KEY: {exc}",
+        )
 
     # Map section to generator method
     gen_map = {
@@ -1971,10 +1977,14 @@ async def get_insolvency_glossary():
     """Return the Layer 1 insolvency glossary terms."""
     glossary_path = GLOSSARY_DIR / "insolvency_layer1.json"
     if not glossary_path.exists():
-        raise HTTPException(status_code=500, detail="Insolvency glossary file not found")
+        raise HTTPException(status_code=404, detail="Insolvency glossary file not found")
 
-    with open(glossary_path) as f:
-        data = json.load(f)
+    try:
+        with open(glossary_path) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        logger.error("Malformed insolvency glossary JSON: %s", exc)
+        raise HTTPException(status_code=500, detail="Insolvency glossary file is malformed")
 
     terms = data.get("terms", {})
     return {
@@ -1998,8 +2008,12 @@ async def get_industry_glossary(industry: str):
             detail={"message": f"Industry glossary '{industry}' not found", "available_industries": sorted(available)},
         )
 
-    with open(glossary_path) as f:
-        data = json.load(f)
+    try:
+        with open(glossary_path) as f:
+            data = json.load(f)
+    except json.JSONDecodeError as exc:
+        logger.error("Malformed industry glossary JSON (%s): %s", industry, exc)
+        raise HTTPException(status_code=500, detail=f"Industry glossary file for '{industry}' is malformed")
 
     terms = data.get("terms", {})
     return {
@@ -2192,11 +2206,15 @@ async def generate_comparison_download(
     comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
 
     # 3. Generate .docx via document generator
-    filepath = document_generator.generate_comparison_docx(
-        comparison_data=comparison_data,
-        company_name=company.legal_name,
-        acn=company.acn,
-    )
+    try:
+        filepath = document_generator.generate_comparison_docx(
+            comparison_data=comparison_data,
+            company_name=company.legal_name,
+            acn=company.acn,
+        )
+    except Exception as exc:
+        logger.error("Failed to generate comparison document: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate comparison document")
 
     # 4. Build canonical filename
     safe_name = _safe_company_name(company.legal_name)
@@ -2270,10 +2288,14 @@ async def generate_payment_schedule_download(
         raise HTTPException(status_code=400, detail=str(exc))
 
     # 4. Generate .docx
-    filepath = document_generator.generate_payment_schedule_docx(
-        schedule_data=schedule_data,
-        company_name=company.legal_name,
-    )
+    try:
+        filepath = document_generator.generate_payment_schedule_docx(
+            schedule_data=schedule_data,
+            company_name=company.legal_name,
+        )
+    except Exception as exc:
+        logger.error("Failed to generate payment schedule document: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate payment schedule document")
 
     # 5. Build canonical filename
     safe_name = _safe_company_name(company.legal_name)
@@ -2348,11 +2370,15 @@ async def generate_company_statement_download(
     draft_sections = [n.section for n in narratives if n.status != "approved"]
 
     # 4. Generate .docx
-    filepath = document_generator.generate_company_statement_docx(
-        sections=sections,
-        company_name=company.legal_name,
-        acn=company.acn,
-    )
+    try:
+        filepath = document_generator.generate_company_statement_docx(
+            sections=sections,
+            company_name=company.legal_name,
+            acn=company.acn,
+        )
+    except Exception as exc:
+        logger.error("Failed to generate company statement document: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate company statement document")
 
     # 5. Build canonical filename
     safe_name = _safe_company_name(company.legal_name)
@@ -2456,11 +2482,15 @@ async def generate_all_documents_download(
     }
 
     comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
-    comparison_filepath = document_generator.generate_comparison_docx(
-        comparison_data=comparison_data,
-        company_name=company.legal_name,
-        acn=company.acn,
-    )
+    try:
+        comparison_filepath = document_generator.generate_comparison_docx(
+            comparison_data=comparison_data,
+            company_name=company.legal_name,
+            acn=company.acn,
+        )
+    except Exception as exc:
+        logger.error("Failed to generate comparison document: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate comparison document")
     comparison_filename = f"{safe_name}_Annexure_G_Comparison_{date_str}.docx"
 
     # 3. Generate payment schedule document
@@ -2478,10 +2508,14 @@ async def generate_all_documents_download(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    payment_filepath = document_generator.generate_payment_schedule_docx(
-        schedule_data=schedule_data,
-        company_name=company.legal_name,
-    )
+    try:
+        payment_filepath = document_generator.generate_payment_schedule_docx(
+            schedule_data=schedule_data,
+            company_name=company.legal_name,
+        )
+    except Exception as exc:
+        logger.error("Failed to generate payment schedule document: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate payment schedule document")
     payment_filename = f"{safe_name}_Payment_Schedule_{date_str}.docx"
 
     # 4. Generate company statement document (optional — skip if no narratives yet)
@@ -2502,11 +2536,15 @@ async def generate_all_documents_download(
             for n in narratives
         ]
 
-        statement_filepath = document_generator.generate_company_statement_docx(
-            sections=sections,
-            company_name=company.legal_name,
-            acn=company.acn,
-        )
+        try:
+            statement_filepath = document_generator.generate_company_statement_docx(
+                sections=sections,
+                company_name=company.legal_name,
+                acn=company.acn,
+            )
+        except Exception as exc:
+            logger.error("Failed to generate company statement document: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to generate company statement document")
         statement_filename = f"{safe_name}_Company_Offer_Statement_{date_str}.docx"
 
     # 5. Bundle into ZIP
@@ -2514,11 +2552,15 @@ async def generate_all_documents_download(
     zip_filename = f"{safe_name}_SBR_Documents_{date_str}.zip"
     zip_path = os.path.join(tmp_dir, zip_filename)
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(str(comparison_filepath), comparison_filename)
-        zf.write(str(payment_filepath), payment_filename)
-        if statement_filepath:
-            zf.write(str(statement_filepath), statement_filename)
+    try:
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(str(comparison_filepath), comparison_filename)
+            zf.write(str(payment_filepath), payment_filename)
+            if statement_filepath:
+                zf.write(str(statement_filepath), statement_filename)
+    except (FileNotFoundError, IOError) as exc:
+        logger.error("Failed to create document archive: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to create document archive")
 
     # 6. Track documents in DocumentOutputDB
     await _track_document_output(db, cid, "comparison", comparison_filename)

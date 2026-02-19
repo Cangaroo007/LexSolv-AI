@@ -683,6 +683,9 @@ td input[type="checkbox"] { width: auto; }
                 </thead>
                 <tbody id="creditor-tbody"></tbody>
             </table>
+            <div id="creditor-empty-state" class="text-muted" style="text-align:center;padding:1.5rem 0;">
+                Upload an aged payables file or add creditors manually.
+            </div>
         </div>
         <div class="totals-row">
             Total Claims: <span id="creditor-total" style="margin-left:.4rem;">$0.00</span>
@@ -717,6 +720,9 @@ td input[type="checkbox"] { width: auto; }
                 </thead>
                 <tbody id="asset-tbody"></tbody>
             </table>
+            <div id="asset-empty-state" class="text-muted" style="text-align:center;padding:1.5rem 0;">
+                Upload a balance sheet or add assets manually.
+            </div>
         </div>
         <div class="flex-end mt-md">
             <button class="btn btn-primary btn-sm" onclick="saveAssets()">Save Assets</button>
@@ -829,7 +835,11 @@ td input[type="checkbox"] { width: auto; }
         </div>
         <div id="error-narrative"></div>
 
-        <div id="narrative-sections" class="mt-md"></div>
+        <div id="narrative-sections" class="mt-md">
+            <div id="narrative-empty-state" class="text-muted" style="text-align:center;padding:1.5rem 0;">
+                Paste director notes above and click Generate.
+            </div>
+        </div>
     </div>
 </div>
 
@@ -1068,9 +1078,15 @@ function resetEngagement() {
     document.getElementById('creditor-tbody').innerHTML = '';
     document.getElementById('asset-tbody').innerHTML = '';
     document.getElementById('creditor-total').textContent = '$0.00';
+    // Restore empty states
+    const creditorEmpty = document.getElementById('creditor-empty-state');
+    if (creditorEmpty) creditorEmpty.style.display = '';
+    const assetEmpty = document.getElementById('asset-empty-state');
+    if (assetEmpty) assetEmpty.style.display = '';
     document.getElementById('comparison-result').classList.add('hidden');
     document.getElementById('comparison-placeholder').classList.remove('hidden');
-    document.getElementById('narrative-sections').innerHTML = '';
+    document.getElementById('narrative-sections').innerHTML =
+        '<div id="narrative-empty-state" class="text-muted" style="text-align:center;padding:1.5rem 0;">Paste director notes above and click Generate.</div>';
     document.getElementById('approved-counter').textContent = '';
     document.getElementById('director-notes').value = '';
     document.getElementById('known-entities').value = '';
@@ -1145,7 +1161,9 @@ async function loadEngagement() {
     const id = document.getElementById('load-engagement-id').value.trim();
     if (!id) return;
 
+    const btn = document.querySelector('.engagement-bar .btn-secondary');
     clearError('error-engagement');
+    setLoading(btn, true, 'Loading...');
     try {
         const data = await API.get('/api/engagements/' + id);
         currentEngagementId = id;
@@ -1208,6 +1226,8 @@ async function loadEngagement() {
 
     } catch (err) {
         showError('error-engagement', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
     }
 }
 
@@ -1327,6 +1347,8 @@ const CREDITOR_STATUSES = ['active', 'disputed', 'written_off', 'paid', 'forgive
 
 function addCreditorRow(data) {
     const tbody = document.getElementById('creditor-tbody');
+    const emptyState = document.getElementById('creditor-empty-state');
+    if (emptyState) emptyState.style.display = 'none';
     const row = document.createElement('tr');
     const d = data || {};
     const source = d.source || 'manual';
@@ -1382,6 +1404,7 @@ async function saveCreditors() {
     if (!currentEngagementId) return;
     clearError('error-creditors');
 
+    const btn = document.querySelector('#panel-creditors .btn-primary');
     const rows = document.querySelectorAll('#creditor-tbody tr');
     const creditors = [];
     rows.forEach(row => {
@@ -1401,6 +1424,7 @@ async function saveCreditors() {
         });
     });
 
+    setLoading(btn, true, 'Saving...');
     try {
         const result = await API.post(
             '/api/engagements/' + currentEngagementId + '/creditors',
@@ -1415,6 +1439,8 @@ async function saveCreditors() {
         }
     } catch (err) {
         showError('error-creditors', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
     }
 }
 
@@ -1423,6 +1449,8 @@ async function saveCreditors() {
    ============================================================= */
 function addAssetRow(data) {
     const tbody = document.getElementById('asset-tbody');
+    const emptyState = document.getElementById('asset-empty-state');
+    if (emptyState) emptyState.style.display = 'none';
     const row = document.createElement('tr');
     const d = data || {};
     const source = d.source || 'manual';
@@ -1464,6 +1492,7 @@ async function saveAssets() {
     if (!currentEngagementId) return;
     clearError('error-assets');
 
+    const btn = document.querySelector('#panel-assets .btn-primary');
     const rows = document.querySelectorAll('#asset-tbody tr');
     const assets = [];
     rows.forEach(row => {
@@ -1489,10 +1518,13 @@ async function saveAssets() {
         url += '?total_liabilities=' + parsedTotalLiabilities;
     }
 
+    setLoading(btn, true, 'Saving...');
     try {
         await API.post(url, assets);
     } catch (err) {
         showError('error-assets', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
     }
 }
 

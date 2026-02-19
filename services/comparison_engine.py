@@ -20,6 +20,7 @@ class ComparisonEngine:
         "inventory": 0.25,
         "loans_related": 0.30,
         "loans_shareholder": 0.00,
+        "motor_vehicles": 0.50,
         "equipment": 0.25,
         "goodwill": 0.00,
     }
@@ -237,7 +238,9 @@ class ComparisonEngine:
             "inventory": ("inventory", "Inventory"),
             "loans_to_related": ("loans_related", "Loans to Related Entities"),
             "loans_shareholder": ("loans_shareholder", "Shareholder Loans"),
+            "motor_vehicles": ("motor_vehicles", "Motor Vehicles"),
             "equipment": ("equipment", "Plant & Equipment"),
+            "goodwill": ("goodwill", "Goodwill"),
         }
 
         assets: list[dict] = []

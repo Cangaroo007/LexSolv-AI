@@ -111,7 +111,9 @@ class FileParser:
             "intercompany",
             "director loan",
         ],
-        "equipment": ["plant", "equipment", "motor vehicle", "furniture"],
+        "motor_vehicles": ["motor vehicle"],
+        "equipment": ["plant", "equipment", "furniture"],
+        "goodwill": ["goodwill", "intangible"],
         "total_liabilities": ["total liabilities", "total current liabilities"],
     }
 
@@ -136,7 +138,9 @@ class FileParser:
             "inventory": 0.0,
             "loans_to_related": 0.0,
             "loans_shareholder": 0.0,
+            "motor_vehicles": 0.0,
             "equipment": 0.0,
+            "goodwill": 0.0,
             "total_liabilities": 0.0,
         }
 
