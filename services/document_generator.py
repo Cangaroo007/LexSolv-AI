@@ -17,15 +17,17 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from docx import Document
 from docx.shared import Pt, Inches, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.section import WD_ORIENT
+from docx.oxml.ns import qn
 
 from models.schemas import (
     AppointmentType,
@@ -144,6 +146,43 @@ def _add_review_placeholder(doc: Document, section_name: str) -> None:
 def _format_date(d: date) -> str:
     """Format a date for Australian documents."""
     return d.strftime("%-d %B %Y")
+
+
+def _format_date_au(d: date) -> str:
+    """Format a date in DD/MM/YYYY Australian format."""
+    return d.strftime("%d/%m/%Y")
+
+
+def _format_currency(value: float) -> str:
+    """
+    Format a float as Australian currency: $XXX,XXX.XX.
+
+    Negative values are displayed in parentheses: ($51,600.00).
+    """
+    if value is None:
+        return "-"
+    if value < 0:
+        return f"(${abs(value):,.2f})"
+    return f"${value:,.2f}"
+
+
+def _format_dividend_cents(cents: float) -> str:
+    """Format a dividend as cents in the dollar with one decimal: 47.1¢."""
+    return f"{cents:.1f}¢"
+
+
+def _set_cell_shading(cell, color_hex: str) -> None:
+    """Apply background shading to a table cell."""
+    shading_elm = cell._element.get_or_add_tcPr()
+    shading = shading_elm.makeelement(
+        qn("w:shd"),
+        {
+            qn("w:val"): "clear",
+            qn("w:color"): "auto",
+            qn("w:fill"): color_hex,
+        },
+    )
+    shading_elm.append(shading)
 
 
 def _company_description(company: CompanyData) -> str:
@@ -634,3 +673,657 @@ class DocumentGenerator:
         doc.save(str(filepath))
         logger.info("Safe Harbour checklist generated: %s", filepath)
         return filepath
+
+    # ---------------------------------------------------------------
+    # Annexure G — Comparison of Estimated Return to Creditors
+    # ---------------------------------------------------------------
+
+    def generate_comparison_docx(
+        self,
+        comparison_data: dict,
+        company_name: str,
+        acn: Optional[str] = None,
+        document_date: Optional[date] = None,
+    ) -> Path:
+        """
+        Generate Annexure G — Comparison of Estimated Return to Creditors.
+
+        Accepts the structured dict output from ComparisonEngine.calculate()
+        and produces a professional .docx document matching the standard
+        Annexure G format.
+
+        Parameters
+        ----------
+        comparison_data : dict
+            Output from ComparisonEngine.calculate() with keys: lines,
+            notes, sbr_available, sbr_dividend_cents, liquidation_available,
+            liquidation_dividend_cents, total_creditor_claims.
+        company_name : str
+            Legal name of the company.
+        acn : str, optional
+            Australian Company Number (9 digits).
+        document_date : date, optional
+            Date to display on the document. Defaults to today.
+
+        Returns
+        -------
+        Path
+            File path to the generated .docx.
+        """
+        doc = Document()
+        _set_style_defaults(doc)
+
+        document_date = document_date or date.today()
+        acn_display = (
+            f"{acn[:3]} {acn[3:6]} {acn[6:]}" if acn and len(acn) == 9 else (acn or "")
+        )
+
+        # ── Title ────────────────────────────────────────────────
+        title = doc.add_heading(
+            "ANNEXURE G — COMPARISON OF ESTIMATED RETURN TO CREDITORS",
+            level=0,
+        )
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in title.runs:
+            run.font.color.rgb = RGBColor(0x0F, 0x17, 0x2A)
+            run.font.size = Pt(16)
+
+        doc.add_paragraph()
+
+        # ── Header fields ────────────────────────────────────────
+        _add_field(doc, "Company", company_name)
+        if acn_display:
+            _add_field(doc, "ACN", acn_display)
+        _add_field(doc, "Date", _format_date_au(document_date))
+
+        doc.add_paragraph()
+
+        # ── Comparison Table ─────────────────────────────────────
+        lines = comparison_data["lines"]
+        notes = comparison_data["notes"]
+
+        table = doc.add_table(rows=1, cols=4)
+        table.style = "Table Grid"
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Header row
+        hdr_cells = table.rows[0].cells
+        headers = ["Available Funds", "Notes", "SBR ($)", "Liquidation ($)"]
+        for i, header_text in enumerate(headers):
+            p = hdr_cells[i].paragraphs[0]
+            run = p.add_run(header_text)
+            run.bold = True
+            run.font.size = Pt(10)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_cell_shading(hdr_cells[i], "0F172A")
+            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+        # Set column widths
+        for row in table.rows:
+            row.cells[0].width = Cm(8)
+            row.cells[1].width = Cm(1.5)
+            row.cells[2].width = Cm(3.5)
+            row.cells[3].width = Cm(3.5)
+
+        # Data rows
+        for idx, line in enumerate(lines):
+            row = table.add_row()
+
+            # Description
+            desc_cell = row.cells[0]
+            desc_p = desc_cell.paragraphs[0]
+            desc_run = desc_p.add_run(line["description"])
+            desc_run.font.size = Pt(10)
+
+            # Bold summary/total rows
+            is_summary = line["description"] in (
+                "Available for distribution to creditors",
+                "Total estimated recovery",
+                "Estimated dividend (cents in the dollar)",
+            )
+            if is_summary:
+                desc_run.bold = True
+
+            # Notes column
+            note_cell = row.cells[1]
+            note_p = note_cell.paragraphs[0]
+            note_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if line.get("note_number"):
+                note_run = note_p.add_run(str(line["note_number"]))
+                note_run.font.size = Pt(9)
+
+            # SBR value column
+            sbr_cell = row.cells[2]
+            sbr_p = sbr_cell.paragraphs[0]
+            sbr_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            sbr_val = line.get("sbr_value")
+            if line["description"] == "Estimated dividend (cents in the dollar)":
+                sbr_text = _format_dividend_cents(sbr_val) if sbr_val is not None else "-"
+            elif sbr_val is not None:
+                sbr_text = _format_currency(sbr_val)
+            else:
+                sbr_text = "-"
+            sbr_run = sbr_p.add_run(sbr_text)
+            sbr_run.font.size = Pt(10)
+            if is_summary:
+                sbr_run.bold = True
+
+            # Liquidation value column
+            liq_cell = row.cells[3]
+            liq_p = liq_cell.paragraphs[0]
+            liq_p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            liq_val = line.get("liquidation_value")
+            if line["description"] == "Estimated dividend (cents in the dollar)":
+                liq_text = _format_dividend_cents(liq_val) if liq_val is not None else "-"
+            elif liq_val is not None:
+                liq_text = _format_currency(liq_val)
+            else:
+                liq_text = "-"
+            liq_run = liq_p.add_run(liq_text)
+            liq_run.font.size = Pt(10)
+            if is_summary:
+                liq_run.bold = True
+
+            # Alternate row shading
+            if idx % 2 == 0:
+                for cell in row.cells:
+                    _set_cell_shading(cell, "F5F5F5")
+
+            # Highlight summary rows
+            if is_summary:
+                for cell in row.cells:
+                    _set_cell_shading(cell, "E8EAF0")
+
+        # Total creditor claims row
+        total_row = table.add_row()
+        total_desc = total_row.cells[0].paragraphs[0]
+        total_desc_run = total_desc.add_run("Total Admitted Claims")
+        total_desc_run.bold = True
+        total_desc_run.font.size = Pt(10)
+
+        # Note number for total claims (last note)
+        total_note_p = total_row.cells[1].paragraphs[0]
+        total_note_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Find the note number for total creditor claims
+        last_note_num = len(notes)
+        total_note_run = total_note_p.add_run(str(last_note_num))
+        total_note_run.font.size = Pt(9)
+
+        claims = comparison_data["total_creditor_claims"]
+        for cell_idx in [2, 3]:
+            p = total_row.cells[cell_idx].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = p.add_run(_format_currency(claims))
+            run.bold = True
+            run.font.size = Pt(10)
+
+        for cell in total_row.cells:
+            _set_cell_shading(cell, "E8EAF0")
+
+        doc.add_paragraph()
+
+        # ── Notes Section ────────────────────────────────────────
+        _add_heading(doc, "Notes", level=2)
+
+        for note in notes:
+            p = doc.add_paragraph()
+            run = p.add_run(note)
+            run.font.size = Pt(9)
+            run.font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+
+        # ── Footer ───────────────────────────────────────────────
+        doc.add_paragraph()
+        footer_p = doc.add_paragraph()
+        footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = footer_p.add_run(
+            f"Generated by LexSolv AI on {_format_date(date.today())} — "
+            f"DRAFT: For review prior to inclusion in the Company Offer Statement"
+        )
+        run.font.size = Pt(8)
+        run.font.italic = True
+        run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+        # ── Save ─────────────────────────────────────────────────
+        safe_name = company_name.replace(" ", "_").replace("/", "-")[:40]
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"AnnexureG_{safe_name}_{timestamp}.docx"
+        filepath = OUTPUT_DIR / filename
+
+        doc.save(str(filepath))
+        logger.info("Annexure G comparison generated: %s", filepath)
+        return filepath
+
+    # ---------------------------------------------------------------
+    # Payment Schedule Document
+    # ---------------------------------------------------------------
+
+    def generate_payment_schedule_docx(
+        self,
+        schedule_data: dict,
+        company_name: str,
+        appointment_date: Optional[date] = None,
+        document_date: Optional[date] = None,
+    ) -> Path:
+        """
+        Generate a Payment Schedule document in .docx format.
+
+        Accepts the structured dict output from
+        PaymentScheduleGenerator.generate() and produces a professional
+        payment schedule document.
+
+        Parameters
+        ----------
+        schedule_data : dict
+            Output from PaymentScheduleGenerator.generate() with keys:
+            entries, total_contribution, total_fees, total_net_dividend.
+        company_name : str
+            Legal name of the company.
+        appointment_date : date, optional
+            Date of the practitioner appointment, used to calculate
+            due dates for each instalment. If None, due dates show [TBC].
+        document_date : date, optional
+            Date to display on the document. Defaults to today.
+
+        Returns
+        -------
+        Path
+            File path to the generated .docx.
+        """
+        doc = Document()
+        _set_style_defaults(doc)
+
+        document_date = document_date or date.today()
+        total_contribution = schedule_data["total_contribution"]
+        total_fees = schedule_data["total_fees"]
+        fee_pct = (total_fees / total_contribution * 100) if total_contribution else 0
+
+        # ── Title ────────────────────────────────────────────────
+        title = doc.add_heading("PAYMENT SCHEDULE", level=0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in title.runs:
+            run.font.color.rgb = RGBColor(0x0F, 0x17, 0x2A)
+            run.font.size = Pt(18)
+
+        doc.add_paragraph()
+
+        # ── Header fields ────────────────────────────────────────
+        _add_field(doc, "Company", company_name)
+        _add_field(
+            doc,
+            "Restructuring Plan Contribution",
+            _format_currency(total_contribution),
+        )
+        _add_field(
+            doc,
+            "Restructuring Practitioner Fee",
+            f"{fee_pct:.0f}% ({_format_currency(total_fees)})",
+        )
+
+        doc.add_paragraph()
+
+        # ── Payment Table ────────────────────────────────────────
+        entries = schedule_data["entries"]
+
+        table = doc.add_table(rows=1, cols=6)
+        table.style = "Table Grid"
+        table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Header row
+        hdr_cells = table.rows[0].cells
+        col_headers = [
+            "Payment #",
+            "Month",
+            "Net Dividend ($)",
+            "SBR Fee ($)",
+            "Total ($)",
+            "Due Date",
+        ]
+        for i, header_text in enumerate(col_headers):
+            p = hdr_cells[i].paragraphs[0]
+            run = p.add_run(header_text)
+            run.bold = True
+            run.font.size = Pt(10)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            _set_cell_shading(hdr_cells[i], "0F172A")
+            run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+        # Set column widths
+        for row in table.rows:
+            row.cells[0].width = Cm(2)
+            row.cells[1].width = Cm(2.5)
+            row.cells[2].width = Cm(3.5)
+            row.cells[3].width = Cm(2.5)
+            row.cells[4].width = Cm(3.5)
+            row.cells[5].width = Cm(2.5)
+
+        # Data rows
+        for idx, entry in enumerate(entries):
+            row = table.add_row()
+
+            # Payment number
+            p = row.cells[0].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(str(entry["payment_number"]))
+            run.font.size = Pt(10)
+
+            # Month label
+            p = row.cells[1].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(entry["month_label"])
+            run.font.size = Pt(10)
+
+            # Net dividend
+            p = row.cells[2].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = p.add_run(_format_currency(entry["net_dividend"]))
+            run.font.size = Pt(10)
+
+            # Practitioner fee
+            p = row.cells[3].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = p.add_run(_format_currency(entry["practitioner_fee"]))
+            run.font.size = Pt(10)
+
+            # Total payment
+            p = row.cells[4].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+            run = p.add_run(_format_currency(entry["total_payment"]))
+            run.font.size = Pt(10)
+
+            # Due date
+            p = row.cells[5].paragraphs[0]
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            if appointment_date:
+                # Due date is appointment_date + N months
+                month_offset = entry["payment_number"]
+                due_year = appointment_date.year + (appointment_date.month + month_offset - 1) // 12
+                due_month = (appointment_date.month + month_offset - 1) % 12 + 1
+                # Clamp the day to valid range for the month
+                import calendar
+                max_day = calendar.monthrange(due_year, due_month)[1]
+                due_day = min(appointment_date.day, max_day)
+                due_dt = date(due_year, due_month, due_day)
+                due_text = _format_date_au(due_dt)
+            else:
+                due_text = "[TBC]"
+            run = p.add_run(due_text)
+            run.font.size = Pt(10)
+
+            # Alternate row shading
+            if idx % 2 == 0:
+                for cell in row.cells:
+                    _set_cell_shading(cell, "F5F5F5")
+
+        # ── Totals row ───────────────────────────────────────────
+        total_row = table.add_row()
+        # Label
+        p = total_row.cells[0].paragraphs[0]
+        run = p.add_run("TOTAL")
+        run.bold = True
+        run.font.size = Pt(10)
+
+        # Empty month cell
+        total_row.cells[1].text = ""
+
+        # Net dividend total
+        p = total_row.cells[2].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run = p.add_run(_format_currency(schedule_data["total_net_dividend"]))
+        run.bold = True
+        run.font.size = Pt(10)
+
+        # Fee total
+        p = total_row.cells[3].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run = p.add_run(_format_currency(schedule_data["total_fees"]))
+        run.bold = True
+        run.font.size = Pt(10)
+
+        # Total contribution
+        p = total_row.cells[4].paragraphs[0]
+        p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        run = p.add_run(_format_currency(schedule_data["total_contribution"]))
+        run.bold = True
+        run.font.size = Pt(10)
+
+        # Empty due date cell
+        total_row.cells[5].text = ""
+
+        for cell in total_row.cells:
+            _set_cell_shading(cell, "E8EAF0")
+
+        # ── Footer ───────────────────────────────────────────────
+        doc.add_paragraph()
+        footer_p = doc.add_paragraph()
+        footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = footer_p.add_run(
+            f"Generated by LexSolv AI on {_format_date(date.today())} — "
+            f"DRAFT: For review prior to inclusion in the Company Offer Statement"
+        )
+        run.font.size = Pt(8)
+        run.font.italic = True
+        run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+        # ── Save ─────────────────────────────────────────────────
+        safe_name = company_name.replace(" ", "_").replace("/", "-")[:40]
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"PaymentSchedule_{safe_name}_{timestamp}.docx"
+        filepath = OUTPUT_DIR / filename
+
+        doc.save(str(filepath))
+        logger.info("Payment Schedule generated: %s", filepath)
+        return filepath
+
+    # ---------------------------------------------------------------
+    # Company Offer Statement
+    # ---------------------------------------------------------------
+
+    def generate_company_statement_docx(
+        self,
+        sections: List[dict],
+        company_name: str,
+        acn: Optional[str] = None,
+        practitioner_name: Optional[str] = None,
+        document_date: Optional[date] = None,
+    ) -> Path:
+        """
+        Generate a Company Offer Statement document in .docx format.
+
+        Assembles the six narrative sections (from NarrativeGenerator)
+        into a formal Company Offer Statement under Part 5.3B of the
+        Corporations Act 2001.
+
+        Parameters
+        ----------
+        sections : list[dict]
+            List of narrative section dicts with keys: section, content,
+            status (draft/reviewed/approved). The sections should be in
+            order: background, expert_advice, plan_summary, viability,
+            comparison_commentary, distress_events.
+        company_name : str
+            Legal name of the company.
+        acn : str, optional
+            Australian Company Number (9 digits).
+        practitioner_name : str, optional
+            Name of the restructuring practitioner.
+        document_date : date, optional
+            Date to display on the document. Defaults to today.
+
+        Returns
+        -------
+        Path
+            File path to the generated .docx.
+        """
+        doc = Document()
+        _set_style_defaults(doc)
+
+        document_date = document_date or date.today()
+        acn_display = (
+            f"{acn[:3]} {acn[3:6]} {acn[6:]}" if acn and len(acn) == 9 else (acn or "")
+        )
+
+        # ── Firm Logo Placeholder ────────────────────────────────
+        logo_p = doc.add_paragraph()
+        logo_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        logo_p.paragraph_format.space_after = Pt(24)
+        run = logo_p.add_run("[FIRM LOGO]")
+        run.font.size = Pt(14)
+        run.font.color.rgb = RGBColor(0xAA, 0xAA, 0xAA)
+        run.font.italic = True
+
+        # ── Document Title ───────────────────────────────────────
+        title = doc.add_heading("COMPANY OFFER STATEMENT", level=0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        for run in title.runs:
+            run.font.color.rgb = RGBColor(0x0F, 0x17, 0x2A)
+            run.font.size = Pt(20)
+
+        # Sub-title
+        subtitle = doc.add_paragraph()
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = subtitle.add_run(
+            "Small Business Restructuring — Part 5.3B Corporations Act 2001"
+        )
+        run.font.size = Pt(11)
+        run.font.italic = True
+        run.font.color.rgb = RGBColor(0x64, 0x64, 0x64)
+
+        doc.add_paragraph()
+
+        # ── Header Fields ────────────────────────────────────────
+        _add_field(doc, "Company", company_name)
+        if acn_display:
+            _add_field(doc, "ACN", acn_display)
+        if practitioner_name:
+            _add_field(doc, "Restructuring Practitioner", practitioner_name)
+        _add_field(doc, "Date", _format_date_au(document_date))
+
+        # ── Separator ────────────────────────────────────────────
+        sep = doc.add_paragraph()
+        sep_run = sep.add_run("─" * 60)
+        sep_run.font.color.rgb = RGBColor(0xCC, 0xCC, 0xCC)
+
+        # ── Section mapping ──────────────────────────────────────
+        # Map section keys to Roman numeral headings and display titles
+        section_map = {
+            "background": ("I", "BACKGROUND"),
+            "expert_advice": ("II", "EXPERT ADVICE AND APPOINTMENT"),
+            "plan_summary": ("III", "THE RESTRUCTURING PLAN"),
+            "viability": ("IV", "VIABILITY AND FUTURE OPERATIONS"),
+            "comparison_commentary": ("V", "COMPARISON OF OUTCOMES"),
+            "distress_events": ("VI", "DISTRESS EVENTS"),
+        }
+
+        # Build a lookup from section key to section data
+        section_lookup = {}
+        for sec in sections:
+            key = sec.get("section", "")
+            section_lookup[key] = sec
+
+        # Render sections in defined order
+        for section_key, (numeral, title_text) in section_map.items():
+            heading_text = f"SECTION {numeral} — {title_text}"
+            _add_heading(doc, heading_text, level=1)
+
+            sec_data = section_lookup.get(section_key)
+
+            if sec_data:
+                # Draft watermark for unapproved sections
+                status = sec_data.get("status", "draft")
+                if status != "approved":
+                    draft_p = doc.add_paragraph()
+                    draft_run = draft_p.add_run("[DRAFT — NOT YET APPROVED]")
+                    draft_run.bold = True
+                    draft_run.font.size = Pt(10)
+                    draft_run.font.color.rgb = RGBColor(0xB9, 0x1C, 0x1C)
+                    draft_p.paragraph_format.space_after = Pt(6)
+
+                # Render the content, highlighting flags
+                content = sec_data.get("content", "")
+                self._render_flagged_content(doc, content)
+            else:
+                # Section not provided
+                p = doc.add_paragraph()
+                run = p.add_run("[Section content not yet generated]")
+                run.font.italic = True
+                run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+            doc.add_paragraph()
+
+        # ── Separator ────────────────────────────────────────────
+        sep = doc.add_paragraph()
+        sep_run = sep.add_run("─" * 60)
+        sep_run.font.color.rgb = RGBColor(0xCC, 0xCC, 0xCC)
+
+        # ── Annexures ────────────────────────────────────────────
+        _add_heading(doc, "ANNEXURES", level=1)
+
+        annexures = [
+            "Annexure G — Comparison of Estimated Return to Creditors",
+            "Annexure H — Payment Schedule",
+        ]
+        for annexure in annexures:
+            p = doc.add_paragraph(annexure, style="List Bullet")
+            for run in p.runs:
+                run.font.size = Pt(11)
+
+        # ── Footer ───────────────────────────────────────────────
+        doc.add_paragraph()
+        footer_p = doc.add_paragraph()
+        footer_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        prac_note = f" by {practitioner_name}" if practitioner_name else ""
+        run = footer_p.add_run(
+            f"Generated by LexSolv AI on {_format_date(date.today())} — "
+            f"DRAFT: For review{prac_note} prior to distribution to creditors"
+        )
+        run.font.size = Pt(8)
+        run.font.italic = True
+        run.font.color.rgb = RGBColor(0x99, 0x99, 0x99)
+
+        # ── Save ─────────────────────────────────────────────────
+        safe_name = company_name.replace(" ", "_").replace("/", "-")[:40]
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        filename = f"CompanyOfferStatement_{safe_name}_{timestamp}.docx"
+        filepath = OUTPUT_DIR / filename
+
+        doc.save(str(filepath))
+        logger.info("Company Offer Statement generated: %s", filepath)
+        return filepath
+
+    # ---------------------------------------------------------------
+    # Helper: render content with flag highlighting
+    # ---------------------------------------------------------------
+
+    def _render_flagged_content(self, doc: Document, content: str) -> None:
+        """
+        Render narrative content with [REQUIRES INPUT] and [UNKNOWN TERM]
+        flags visually highlighted (bold, red text).
+
+        Splits the content into paragraphs and applies highlighting to
+        any flagged placeholders inline.
+        """
+        flag_pattern = re.compile(
+            r"(\[REQUIRES INPUT:\s*[^\]]+\]|\[UNKNOWN TERM:\s*[^\]]+\])"
+        )
+
+        for para_text in content.split("\n"):
+            if not para_text.strip():
+                continue
+
+            p = doc.add_paragraph()
+            parts = flag_pattern.split(para_text)
+
+            for part in parts:
+                if not part:
+                    continue
+                if flag_pattern.match(part):
+                    # Highlighted flag
+                    run = p.add_run(part)
+                    run.bold = True
+                    run.font.size = Pt(11)
+                    run.font.color.rgb = RGBColor(0xB9, 0x1C, 0x1C)
+                    # Add yellow highlight
+                    run.font.highlight_color = 7  # WD_COLOR_INDEX.YELLOW
+                else:
+                    run = p.add_run(part)
+                    run.font.size = Pt(11)
