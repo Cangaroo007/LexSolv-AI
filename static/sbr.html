@@ -580,15 +580,15 @@ td input[type="checkbox"] { width: auto; }
             </div>
             <div class="form-group">
                 <label for="acn">ACN</label>
-                <input type="text" id="acn" placeholder="000 000 000" maxlength="11">
+                <input type="text" id="acn" placeholder="XXX XXX XXX" maxlength="11">
             </div>
             <div class="form-group">
                 <label for="abn">ABN</label>
-                <input type="text" id="abn" placeholder="00 000 000 000" maxlength="14">
+                <input type="text" id="abn" placeholder="XX XXX XXX XXX" maxlength="14">
             </div>
             <div class="form-group">
                 <label for="appointment-date">Appointment Date</label>
-                <input type="date" id="appointment-date">
+                <input type="text" id="appointment-date" placeholder="DD/MM/YYYY" maxlength="10">
             </div>
             <div class="form-group">
                 <label for="practitioner-name">Practitioner</label>
@@ -1056,6 +1056,88 @@ function formatCurrencyCell(val) {
 }
 
 /* =============================================================
+   ACN / ABN / DATE FORMATTING
+   ============================================================= */
+function formatACN(input) {
+    const pos = input.selectionStart;
+    const digitsBefore = input.value.substring(0, pos).replace(/\D/g, '').length;
+    let digits = input.value.replace(/\D/g, '');
+    if (digits.length > 9) digits = digits.substring(0, 9);
+    let formatted = '';
+    for (let i = 0; i < digits.length; i++) {
+        if (i > 0 && i % 3 === 0) formatted += ' ';
+        formatted += digits[i];
+    }
+    input.value = formatted;
+    // Restore cursor after the same number of digits
+    let newPos = 0, seen = 0;
+    for (let i = 0; i < formatted.length && seen < digitsBefore; i++) {
+        newPos = i + 1;
+        if (formatted[i] !== ' ') seen++;
+    }
+    input.setSelectionRange(newPos, newPos);
+}
+
+function formatABN(input) {
+    const pos = input.selectionStart;
+    const digitsBefore = input.value.substring(0, pos).replace(/\D/g, '').length;
+    let digits = input.value.replace(/\D/g, '');
+    if (digits.length > 11) digits = digits.substring(0, 11);
+    const groups = [2, 3, 3, 3];
+    let formatted = '', idx = 0;
+    for (let g = 0; g < groups.length && idx < digits.length; g++) {
+        if (g > 0) formatted += ' ';
+        formatted += digits.substring(idx, idx + groups[g]);
+        idx += groups[g];
+    }
+    input.value = formatted;
+    let newPos = 0, seen = 0;
+    for (let i = 0; i < formatted.length && seen < digitsBefore; i++) {
+        newPos = i + 1;
+        if (formatted[i] !== ' ') seen++;
+    }
+    input.setSelectionRange(newPos, newPos);
+}
+
+function formatDateAU(input) {
+    const pos = input.selectionStart;
+    const digitsBefore = input.value.substring(0, pos).replace(/\D/g, '').length;
+    let digits = input.value.replace(/\D/g, '');
+    if (digits.length > 8) digits = digits.substring(0, 8);
+    let formatted = '';
+    if (digits.length > 0) formatted += digits.substring(0, Math.min(2, digits.length));
+    if (digits.length > 2) formatted += '/' + digits.substring(2, Math.min(4, digits.length));
+    if (digits.length > 4) formatted += '/' + digits.substring(4, 8);
+    input.value = formatted;
+    let newPos = 0, seen = 0;
+    for (let i = 0; i < formatted.length && seen < digitsBefore; i++) {
+        newPos = i + 1;
+        if (formatted[i] !== '/') seen++;
+    }
+    input.setSelectionRange(newPos, newPos);
+}
+
+/** DD/MM/YYYY → YYYY-MM-DD (ISO) or null if invalid */
+function parseDateAUToISO(str) {
+    if (!str) return null;
+    const m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (!m) return null;
+    const day = parseInt(m[1], 10), month = parseInt(m[2], 10), year = parseInt(m[3], 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    const d = new Date(year, month - 1, day);
+    if (d.getFullYear() !== year || d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** YYYY-MM-DD (ISO) → DD/MM/YYYY */
+function isoToDateAU(iso) {
+    if (!iso) return '';
+    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return iso;
+    return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+/* =============================================================
    ① ENGAGEMENT
    ============================================================= */
 function resetEngagement() {
@@ -1134,11 +1216,32 @@ async function saveEngagement() {
     // "012 345 678 910" fits the DB column limits (ACN=9, ABN=11).
     const stripNonDigits = v => (v || '').replace(/\D/g, '') || null;
 
+    const acnDigits = stripNonDigits(document.getElementById('acn').value);
+    if (acnDigits && acnDigits.length !== 9) {
+        showError('error-engagement', 'ACN must be exactly 9 digits.');
+        return;
+    }
+    const abnDigits = stripNonDigits(document.getElementById('abn').value);
+    if (abnDigits && abnDigits.length !== 11) {
+        showError('error-engagement', 'ABN must be exactly 11 digits.');
+        return;
+    }
+
+    const dateRaw = document.getElementById('appointment-date').value.trim();
+    let appointmentDate = null;
+    if (dateRaw) {
+        appointmentDate = parseDateAUToISO(dateRaw);
+        if (!appointmentDate) {
+            showError('error-engagement', 'Appointment date must be a valid date in DD/MM/YYYY format.');
+            return;
+        }
+    }
+
     const body = {
         company_name: companyName,
-        acn: stripNonDigits(document.getElementById('acn').value),
-        abn: stripNonDigits(document.getElementById('abn').value),
-        appointment_date: document.getElementById('appointment-date').value || null,
+        acn: acnDigits,
+        abn: abnDigits,
+        appointment_date: appointmentDate,
         practitioner_name: document.getElementById('practitioner-name').value.trim() || null,
     };
 
@@ -1175,8 +1278,16 @@ async function loadEngagement() {
 
         // Populate engagement details
         document.getElementById('company-name').value = data.company?.legal_name || '';
+        // Set raw digits then trigger formatting for display
         document.getElementById('acn').value = data.company?.acn || '';
+        formatACN(document.getElementById('acn'));
         document.getElementById('abn').value = data.company?.abn || '';
+        formatABN(document.getElementById('abn'));
+        // Convert ISO date to DD/MM/YYYY for display
+        if (data.appointment_date || data.company?.appointment_date) {
+            document.getElementById('appointment-date').value =
+                isoToDateAU(data.appointment_date || data.company?.appointment_date);
+        }
 
         // Populate creditors
         if (data.creditors && data.creditors.length > 0) {
@@ -1985,6 +2096,12 @@ async function loadDocumentHistory() {
    ============================================================= */
 document.addEventListener('DOMContentLoaded', () => {
     initDropZones();
+    // ACN auto-formatting (XXX XXX XXX)
+    document.getElementById('acn').addEventListener('input', function() { formatACN(this); });
+    // ABN auto-formatting (XX XXX XXX XXX)
+    document.getElementById('abn').addEventListener('input', function() { formatABN(this); });
+    // Date auto-formatting (DD/MM/YYYY)
+    document.getElementById('appointment-date').addEventListener('input', function() { formatDateAU(this); });
 });
 </script>
 </body>
