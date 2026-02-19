@@ -865,7 +865,7 @@ async def upload_pnl(file: UploadFile):
 # ===================================================================
 
 
-@app.post("/api/engagements", tags=["SBR Engagement"])
+@app.post("/api/engagements", status_code=201, tags=["SBR Engagement"])
 async def create_engagement(data: dict, db: AsyncSession = Depends(get_db)):
     """
     Create new SBR engagement. Creates a company record if needed.
@@ -873,14 +873,21 @@ async def create_engagement(data: dict, db: AsyncSession = Depends(get_db)):
            "appointment_date": "...", "practitioner_name": "..."}
     Returns the company record with ID.
     """
+    company_name = (data.get("company_name") or "").strip()
+    if not company_name:
+        raise HTTPException(status_code=400, detail="company_name is required")
+
     company = CompanyDB(
-        legal_name=data.get("company_name", ""),
+        legal_name=company_name,
         acn=data.get("acn"),
         abn=data.get("abn"),
         source="sbr",
     )
     db.add(company)
     await db.flush()
+    # Refresh to load server-generated fields (created_at, updated_at) which
+    # use server_default and may not be populated after flush on PostgreSQL.
+    await db.refresh(company)
     return {
         "id": str(company.id),
         "company_name": company.legal_name,
