@@ -20,11 +20,11 @@ class CreditorScheduleService:
 
     _ATO_PATTERN = re.compile(r"australian taxation office|(?<!\w)ato(?!\w)", re.IGNORECASE)
     _ATO_ITA_PATTERN = re.compile(r"\bita\b", re.IGNORECASE)
-    _ATO_ICA_PATTERN = re.compile(r"\b(?:ica|bas|gst)\b", re.IGNORECASE)
+    _ATO_ICA_PATTERN = re.compile(r"\b(?:ica|bas|gst|sgc)\b", re.IGNORECASE)
 
     _WORKERS_COMP_PATTERN = re.compile(r"icare|workcover|workers\s*comp", re.IGNORECASE)
     _FINANCE_PATTERN = re.compile(
-        r"(?<!\w)(?:prospa|moula|ondeck|lumi|zip\s*business)(?!\w)", re.IGNORECASE
+        r"(?<!\w)(?:prospa|moula|ondeck|lumi|zip\s*business|equipment\s*finance)(?!\w)", re.IGNORECASE
     )
 
     # ------------------------------------------------------------------ #
