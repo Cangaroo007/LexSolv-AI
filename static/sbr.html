@@ -1130,10 +1130,14 @@ async function saveEngagement() {
         return;
     }
 
+    // Strip non-digit chars from ACN/ABN so spaced input like
+    // "012 345 678 910" fits the DB column limits (ACN=9, ABN=11).
+    const stripNonDigits = v => (v || '').replace(/\D/g, '') || null;
+
     const body = {
         company_name: companyName,
-        acn: document.getElementById('acn').value.trim() || null,
-        abn: document.getElementById('abn').value.trim() || null,
+        acn: stripNonDigits(document.getElementById('acn').value),
+        abn: stripNonDigits(document.getElementById('abn').value),
         appointment_date: document.getElementById('appointment-date').value || null,
         practitioner_name: document.getElementById('practitioner-name').value.trim() || null,
     };

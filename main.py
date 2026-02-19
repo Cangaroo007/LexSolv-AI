@@ -873,14 +873,25 @@ async def create_engagement(data: dict, db: AsyncSession = Depends(get_db)):
            "appointment_date": "...", "practitioner_name": "..."}
     Returns the company record with ID.
     """
+    import re
+
     company_name = (data.get("company_name") or "").strip()
     if not company_name:
         raise HTTPException(status_code=400, detail="company_name is required")
 
+    # Sanitise ACN/ABN: strip everything except digits so values like
+    # "012 345 678 910" or "000-000-000" fit the DB column limits
+    # (acn VARCHAR(9), abn VARCHAR(11)).  PostgreSQL enforces VARCHAR
+    # length strictly — exceeding it causes a 500.
+    raw_acn = data.get("acn") or ""
+    raw_abn = data.get("abn") or ""
+    acn = re.sub(r"\D", "", raw_acn)[:9] or None
+    abn = re.sub(r"\D", "", raw_abn)[:11] or None
+
     company = CompanyDB(
         legal_name=company_name,
-        acn=data.get("acn"),
-        abn=data.get("abn"),
+        acn=acn,
+        abn=abn,
         source="sbr",
     )
     db.add(company)
