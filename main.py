@@ -660,6 +660,414 @@ async def generate_safe_harbour(req: SafeHarbourRequest):
 
 
 # ===================================================================
+# SBR Document Generation endpoints (engagement-scoped)
+# ===================================================================
+
+VALID_DOC_TYPES = {"comparison", "payment-schedule", "company-statement"}
+
+
+class GenerateDocRequest(BaseModel):
+    """Optional overrides for document generation."""
+    document_date: Optional[str] = None  # ISO date string override
+    appointment_date: Optional[str] = None  # ISO date for payment schedule
+    practitioner_name: Optional[str] = None  # For company statement
+
+
+async def _load_company_or_404(db: AsyncSession, company_id: str):
+    """Parse UUID, load company, raise 404 if missing."""
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    return cid, company
+
+
+async def _load_comparison_data(db: AsyncSession, cid, company):
+    """Load assets, creditors, plan and run comparison engine. Raises 400 on missing data."""
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    if not plan_row:
+        raise HTTPException(
+            status_code=400,
+            detail="Plan parameters required before generating comparison document",
+        )
+
+    cred_result = await db.execute(
+        sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+    )
+    creditors = cred_result.scalars().all()
+    if not creditors:
+        raise HTTPException(status_code=400, detail="Creditor schedule required")
+
+    asset_result = await db.execute(
+        sa.select(AssetDB).where(AssetDB.company_id == cid)
+    )
+    assets_rows = asset_result.scalars().all()
+    if not assets_rows:
+        raise HTTPException(status_code=400, detail="Asset register required")
+
+    assets = [
+        {
+            "asset_type": a.asset_type,
+            "description": a.description,
+            "book_value": a.book_value,
+            "liquidation_recovery_pct": a.liquidation_recovery_pct,
+            "liquidation_value": a.liquidation_value,
+        }
+        for a in assets_rows
+    ]
+
+    stored_total = float(company.total_creditors or 0)
+    creditors_total = (
+        stored_total if stored_total > 0
+        else sum(float(c.amount_claimed) for c in creditors)
+    )
+
+    plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "est_liquidator_fees": plan_row.est_liquidator_fees,
+        "est_legal_fees": plan_row.est_legal_fees,
+        "est_disbursements": plan_row.est_disbursements,
+    }
+
+    comparison_data = comparison_engine.calculate(assets, creditors_total, plan)
+    return comparison_data, plan_row
+
+
+async def _load_schedule_data(db: AsyncSession, cid):
+    """Load plan and generate payment schedule. Raises 400 on missing data."""
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    if not plan_row:
+        raise HTTPException(
+            status_code=400,
+            detail="Plan parameters required before generating payment schedule document",
+        )
+
+    plan = {
+        "total_contribution": plan_row.total_contribution,
+        "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+        "num_initial_payments": plan_row.num_initial_payments,
+        "initial_payment_amount": plan_row.initial_payment_amount,
+        "num_ongoing_payments": plan_row.num_ongoing_payments,
+        "ongoing_payment_amount": plan_row.ongoing_payment_amount,
+    }
+
+    schedule_data = payment_schedule_generator.generate(plan)
+    return schedule_data, plan_row
+
+
+def _parse_date_opt(value: Optional[str]) -> Optional[date]:
+    """Parse an ISO date string, returning None if not provided."""
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {value}")
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/comparison",
+    response_model=DocumentResponse,
+    tags=["Document Generation"],
+    summary="Generate Annexure G comparison .docx",
+)
+async def generate_comparison_doc(
+    company_id: str,
+    req: GenerateDocRequest = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate Annexure G — Comparison of Estimated Return to Creditors
+    as a downloadable .docx document.
+
+    Loads assets, creditors, and plan parameters from the database,
+    runs the comparison engine, and produces the formatted document.
+    """
+    req = req or GenerateDocRequest()
+    cid, company = await _load_company_or_404(db, company_id)
+    comparison_data, plan_row = await _load_comparison_data(db, cid, company)
+
+    filepath = document_generator.generate_comparison_docx(
+        comparison_data=comparison_data,
+        company_name=company.legal_name,
+        acn=company.acn,
+        document_date=_parse_date_opt(req.document_date),
+    )
+
+    return DocumentResponse(
+        filename=filepath.name,
+        document_type="Annexure G — Comparison",
+        download_url=f"/documents/{filepath.name}",
+        generated_at=datetime.now(timezone.utc),
+        company_name=company.legal_name,
+    )
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/payment-schedule",
+    response_model=DocumentResponse,
+    tags=["Document Generation"],
+    summary="Generate payment schedule .docx",
+)
+async def generate_payment_schedule_doc(
+    company_id: str,
+    req: GenerateDocRequest = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate a Payment Schedule document as a downloadable .docx.
+
+    Loads plan parameters from the database, generates the 24-month
+    payment schedule, and produces the formatted document.
+    """
+    req = req or GenerateDocRequest()
+    cid, company = await _load_company_or_404(db, company_id)
+    schedule_data, plan_row = await _load_schedule_data(db, cid)
+
+    filepath = document_generator.generate_payment_schedule_docx(
+        schedule_data=schedule_data,
+        company_name=company.legal_name,
+        appointment_date=_parse_date_opt(req.appointment_date),
+        document_date=_parse_date_opt(req.document_date),
+    )
+
+    return DocumentResponse(
+        filename=filepath.name,
+        document_type="Payment Schedule",
+        download_url=f"/documents/{filepath.name}",
+        generated_at=datetime.now(timezone.utc),
+        company_name=company.legal_name,
+    )
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/company-statement",
+    response_model=DocumentResponse,
+    tags=["Document Generation"],
+    summary="Generate Company Offer Statement .docx",
+)
+async def generate_company_statement_doc(
+    company_id: str,
+    req: GenerateDocRequest = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate a Company Offer Statement document as a downloadable .docx.
+
+    Loads the six narrative sections from the database and assembles
+    them into a formal document under Part 5.3B of the Corporations Act.
+    """
+    import uuid as _uuid
+
+    req = req or GenerateDocRequest()
+    cid, company = await _load_company_or_404(db, company_id)
+
+    # Load narrative sections
+    result = await db.execute(
+        sa.select(NarrativeDB).where(NarrativeDB.engagement_id == cid)
+    )
+    narratives = result.scalars().all()
+    if not narratives:
+        raise HTTPException(
+            status_code=400,
+            detail="Narrative sections must be generated before creating the Company Offer Statement",
+        )
+
+    sections = [
+        {
+            "section": n.section,
+            "content": n.content,
+            "status": n.status,
+        }
+        for n in narratives
+    ]
+
+    filepath = document_generator.generate_company_statement_docx(
+        sections=sections,
+        company_name=company.legal_name,
+        acn=company.acn,
+        practitioner_name=req.practitioner_name,
+        document_date=_parse_date_opt(req.document_date),
+    )
+
+    return DocumentResponse(
+        filename=filepath.name,
+        document_type="Company Offer Statement",
+        download_url=f"/documents/{filepath.name}",
+        generated_at=datetime.now(timezone.utc),
+        company_name=company.legal_name,
+        practitioner_name=req.practitioner_name,
+    )
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/full-pack",
+    tags=["Document Generation"],
+    summary="Generate all SBR documents as a pack",
+)
+async def generate_full_pack(
+    company_id: str,
+    req: GenerateDocRequest = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Generate the full SBR document pack: Annexure G (comparison),
+    Payment Schedule, and Company Offer Statement.
+
+    Returns metadata for all three generated documents.
+    """
+    req = req or GenerateDocRequest()
+    cid, company = await _load_company_or_404(db, company_id)
+
+    doc_date = _parse_date_opt(req.document_date)
+    appt_date = _parse_date_opt(req.appointment_date)
+    documents = []
+
+    # 1. Comparison document
+    comparison_data, plan_row = await _load_comparison_data(db, cid, company)
+    comp_path = document_generator.generate_comparison_docx(
+        comparison_data=comparison_data,
+        company_name=company.legal_name,
+        acn=company.acn,
+        document_date=doc_date,
+    )
+    documents.append(DocumentResponse(
+        filename=comp_path.name,
+        document_type="Annexure G — Comparison",
+        download_url=f"/documents/{comp_path.name}",
+        generated_at=datetime.now(timezone.utc),
+        company_name=company.legal_name,
+    ))
+
+    # 2. Payment schedule
+    schedule_data, _ = await _load_schedule_data(db, cid)
+    sched_path = document_generator.generate_payment_schedule_docx(
+        schedule_data=schedule_data,
+        company_name=company.legal_name,
+        appointment_date=appt_date,
+        document_date=doc_date,
+    )
+    documents.append(DocumentResponse(
+        filename=sched_path.name,
+        document_type="Payment Schedule",
+        download_url=f"/documents/{sched_path.name}",
+        generated_at=datetime.now(timezone.utc),
+        company_name=company.legal_name,
+    ))
+
+    # 3. Company offer statement
+    result = await db.execute(
+        sa.select(NarrativeDB).where(NarrativeDB.engagement_id == cid)
+    )
+    narratives = result.scalars().all()
+    if not narratives:
+        raise HTTPException(
+            status_code=400,
+            detail="Narrative sections must be generated before creating the full document pack",
+        )
+
+    sections = [
+        {"section": n.section, "content": n.content, "status": n.status}
+        for n in narratives
+    ]
+    stmt_path = document_generator.generate_company_statement_docx(
+        sections=sections,
+        company_name=company.legal_name,
+        acn=company.acn,
+        practitioner_name=req.practitioner_name,
+        document_date=doc_date,
+    )
+    documents.append(DocumentResponse(
+        filename=stmt_path.name,
+        document_type="Company Offer Statement",
+        download_url=f"/documents/{stmt_path.name}",
+        generated_at=datetime.now(timezone.utc),
+        company_name=company.legal_name,
+        practitioner_name=req.practitioner_name,
+    ))
+
+    return {
+        "engagement_id": str(cid),
+        "documents": [d.model_dump() for d in documents],
+        "count": len(documents),
+    }
+
+
+@app.get(
+    "/api/engagements/{company_id}/documents",
+    tags=["Document Generation"],
+    summary="List generated documents for an engagement",
+)
+async def list_engagement_documents(
+    company_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List all previously generated .docx documents for this engagement.
+
+    Scans the generated_documents directory for files matching the
+    company name and returns their metadata.
+    """
+    from services.document_generator import OUTPUT_DIR
+
+    cid, company = await _load_company_or_404(db, company_id)
+
+    safe_name = company.legal_name.replace(" ", "_").replace("/", "-")[:40]
+    documents = []
+
+    if OUTPUT_DIR.exists():
+        for filepath in sorted(OUTPUT_DIR.glob(f"*{safe_name}*.docx"), reverse=True):
+            # Determine document type from filename prefix
+            name = filepath.name
+            if name.startswith("AnnexureG_"):
+                doc_type = "Annexure G — Comparison"
+            elif name.startswith("PaymentSchedule_"):
+                doc_type = "Payment Schedule"
+            elif name.startswith("CompanyOfferStatement_"):
+                doc_type = "Company Offer Statement"
+            elif name.startswith("DIRRI_"):
+                doc_type = "DIRRI"
+            elif name.startswith("SafeHarbour_"):
+                doc_type = "Safe Harbour Assessment"
+            else:
+                doc_type = "Unknown"
+
+            stat = filepath.stat()
+            documents.append({
+                "filename": name,
+                "document_type": doc_type,
+                "download_url": f"/documents/{name}",
+                "generated_at": datetime.fromtimestamp(
+                    stat.st_mtime, tz=timezone.utc
+                ).isoformat(),
+                "size_bytes": stat.st_size,
+            })
+
+    return {
+        "engagement_id": str(cid),
+        "company_name": company.legal_name,
+        "documents": documents,
+        "count": len(documents),
+    }
+
+
+# ===================================================================
 # Privacy Vault endpoints (Anonymization & Re-identification)
 # ===================================================================
 

@@ -413,7 +413,7 @@ class DocumentResponse(BaseModel):
     download_url: str = Field(..., description="Relative URL to download the generated document")
     generated_at: datetime
     company_name: str
-    practitioner_name: str
+    practitioner_name: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
