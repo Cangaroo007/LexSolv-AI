@@ -12,48 +12,52 @@ Usage: Run ONCE as Railway start command, then revert to normal start command.
     Then revert Procfile to:
         release: python run_migrations.py
         web: uvicorn main:app --host 0.0.0.0 --port $PORT
+
+Uses asyncpg directly (psycopg2 is not available on Railway).
 """
+import asyncio
 import os
 import sys
 
+import asyncpg
 
-def fix():
-    from sqlalchemy import create_engine, text
 
+async def fix():
     url = os.environ.get("DATABASE_URL", "")
     if not url:
         print("ERROR: DATABASE_URL not set")
         sys.exit(1)
 
-    # Convert async URL to sync for this script
-    sync_url = url.replace("+asyncpg", "").replace("postgresql+asyncpg", "postgresql")
-    engine = create_engine(sync_url)
+    # Convert SQLAlchemy-style URL to raw asyncpg format
+    # postgresql+asyncpg://user:pass@host:port/db -> postgresql://user:pass@host:port/db
+    url = url.replace("+asyncpg", "")
 
-    with engine.connect() as conn:
+    conn = await asyncpg.connect(url)
+
+    try:
         # ── 1. Create alembic_version table if missing ────────────────────
-        conn.execute(text("""
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS alembic_version (
                 version_num VARCHAR(32) NOT NULL,
                 CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
             )
-        """))
+        """)
 
         # ── 2. Stamp at migration 0007 (latest head) ─────────────────────
         # Migration chain: 0001 → 0002 → 51a7d87a3bda → 0003 → 0004 → 0005 → 0006 → 0007
-        conn.execute(text("DELETE FROM alembic_version"))
-        conn.execute(text("INSERT INTO alembic_version (version_num) VALUES ('0007')"))
+        await conn.execute("DELETE FROM alembic_version")
+        await conn.execute("INSERT INTO alembic_version (version_num) VALUES ('0007')")
 
         # ── 3. Add missing enum values ────────────────────────────────────
         # Migration 0002: add 'forgiven' to creditor_status enum
+        # ALTER TYPE ... ADD VALUE cannot run inside a transaction block,
+        # and asyncpg runs each execute() outside a transaction by default, so this is fine.
         print("Adding missing enum values...")
         try:
-            conn.execute(text("ALTER TYPE creditor_status ADD VALUE IF NOT EXISTS 'forgiven'"))
+            await conn.execute("ALTER TYPE creditor_status ADD VALUE IF NOT EXISTS 'forgiven'")
             print("  OK: added 'forgiven' to creditor_status")
         except Exception as e:
             print(f"  SKIP: creditor_status forgiven ({e})")
-
-        # Need to commit after ALTER TYPE before DDL that uses it
-        conn.commit()
 
         # ── 4. Add missing columns ───────────────────────────────────────
         missing_columns = [
@@ -73,7 +77,7 @@ def fix():
         print("Adding missing columns...")
         for sql in missing_columns:
             try:
-                conn.execute(text(sql))
+                await conn.execute(sql)
                 print(f"  OK: {sql[:70]}...")
             except Exception as e:
                 print(f"  SKIP: {sql[:70]}... ({e})")
@@ -161,7 +165,7 @@ def fix():
         print("Creating missing tables...")
         for table_name, sql in missing_tables:
             try:
-                conn.execute(text(sql))
+                await conn.execute(sql)
                 print(f"  OK: {table_name}")
             except Exception as e:
                 print(f"  SKIP: {table_name} ({e})")
@@ -184,31 +188,29 @@ def fix():
         print("Creating missing indexes...")
         for index_name, sql in missing_indexes:
             try:
-                conn.execute(text(sql))
+                await conn.execute(sql)
                 print(f"  OK: {index_name}")
             except Exception as e:
                 print(f"  SKIP: {index_name} ({e})")
 
-        conn.commit()
-
         # ── 7. Verify ────────────────────────────────────────────────────
         print("\n--- Verification ---")
 
-        result = conn.execute(text("SELECT version_num FROM alembic_version"))
-        version = result.fetchone()
-        print(f"Alembic version stamped: {version[0] if version else 'NONE'}")
+        row = await conn.fetchrow("SELECT version_num FROM alembic_version")
+        print(f"Alembic version stamped: {row['version_num'] if row else 'NONE'}")
 
         # Check companies columns
-        result = conn.execute(text("""
+        rows = await conn.fetch("""
             SELECT column_name FROM information_schema.columns
             WHERE table_name = 'companies'
             ORDER BY ordinal_position
-        """))
-        columns = [r[0] for r in result]
+        """)
+        columns = [r["column_name"] for r in rows]
         print(f"\nCompanies columns: {columns}")
 
-        critical_company_cols = ["custom_glossary", "appointment_date", "practitioner_name", "industry"]
         all_ok = True
+
+        critical_company_cols = ["custom_glossary", "appointment_date", "practitioner_name", "industry"]
         for col in critical_company_cols:
             if col in columns:
                 print(f"  OK: companies.{col}")
@@ -217,12 +219,12 @@ def fix():
                 all_ok = False
 
         # Check creditors columns
-        result = conn.execute(text("""
+        rows = await conn.fetch("""
             SELECT column_name FROM information_schema.columns
             WHERE table_name = 'creditors'
             ORDER BY ordinal_position
-        """))
-        cred_columns = [r[0] for r in result]
+        """)
+        cred_columns = [r["column_name"] for r in rows]
 
         critical_creditor_cols = ["is_related_party", "is_secured", "can_vote", "source"]
         for col in critical_creditor_cols:
@@ -233,12 +235,12 @@ def fix():
                 all_ok = False
 
         # Check all expected tables exist
-        result = conn.execute(text("""
+        rows = await conn.fetch("""
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
             ORDER BY table_name
-        """))
-        tables = [r[0] for r in result]
+        """)
+        tables = [r["table_name"] for r in rows]
         print(f"\nTables: {tables}")
 
         expected_tables = [
@@ -260,6 +262,9 @@ def fix():
             print("\nSome items are still missing — check output above.")
             sys.exit(1)
 
+    finally:
+        await conn.close()
+
 
 if __name__ == "__main__":
-    fix()
+    asyncio.run(fix())
