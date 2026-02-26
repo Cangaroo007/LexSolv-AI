@@ -1291,6 +1291,123 @@ class DocumentGenerator:
         return filepath
 
     # ---------------------------------------------------------------
+    # Director Questionnaire (5.4 — Task C)
+    # ---------------------------------------------------------------
+
+    def generate_director_questionnaire_docx(
+        self,
+        engagement: dict,
+        questions: list[dict],
+    ) -> bytes:
+        """
+        Returns .docx file bytes for the director questionnaire.
+
+        Document structure:
+        - Header: company name, ACN, date generated, practitioner name
+        - Intro para
+        - Questions grouped by topic (Financial Information / Creditor Details / Business Operations)
+        - Each question: numbered, bold question text, then 4 blank lines for written response
+        - Footer: practitioner firm name and contact details
+        """
+        doc = Document()
+        _set_style_defaults(doc)
+
+        company_name = engagement.get("company_name", "Unknown Company")
+        acn = engagement.get("acn", "")
+        practitioner = engagement.get("practitioner_name", "")
+        firm_name = engagement.get("firm_name", "")
+        firm_contact = engagement.get("firm_contact", "")
+
+        # ── Header ──
+        _add_heading(doc, "Director Questionnaire", level=1)
+
+        header_fields = [
+            ("Company", company_name),
+        ]
+        if acn:
+            header_fields.append(("ACN", acn))
+        header_fields.append(("Date Generated", date.today().strftime("%d %B %Y")))
+        if practitioner:
+            header_fields.append(("Practitioner", practitioner))
+
+        for label, value in header_fields:
+            _add_field(doc, label, value)
+
+        doc.add_paragraph()  # spacer
+
+        # ── Intro paragraph ──
+        intro = (
+            "To complete your restructuring plan, we require the following "
+            "information. Please provide your responses below and return to "
+        )
+        if practitioner:
+            intro += practitioner + "."
+        else:
+            intro += "your appointed practitioner."
+        p = doc.add_paragraph(intro)
+        p.style.font.size = Pt(11)
+
+        doc.add_paragraph()  # spacer
+
+        # ── Group questions by topic ──
+        topic_labels = {
+            "financial": "Financial Information",
+            "creditors": "Creditor Details",
+            "operations": "Business Operations",
+        }
+        topic_order = ["financial", "creditors", "operations"]
+
+        grouped: dict[str, list[dict]] = {}
+        for q in questions:
+            topic = q.get("topic", "operations")
+            grouped.setdefault(topic, []).append(q)
+
+        question_num = 0
+        for topic_key in topic_order:
+            topic_questions = grouped.get(topic_key, [])
+            if not topic_questions:
+                continue
+
+            _add_heading(doc, topic_labels.get(topic_key, topic_key), level=2)
+
+            for q in topic_questions:
+                question_num += 1
+                # Numbered, bold question
+                p = doc.add_paragraph()
+                run = p.add_run(f"{question_num}. {q.get('question', '')}")
+                run.bold = True
+                run.font.size = Pt(11)
+
+                # 4 blank lines for written response
+                for _ in range(4):
+                    blank = doc.add_paragraph()
+                    blank.add_run("_" * 70)
+                    blank.runs[0].font.color.rgb = RGBColor(0xCC, 0xCC, 0xCC)
+                    blank.runs[0].font.size = Pt(10)
+
+                doc.add_paragraph()  # spacer between questions
+
+        # ── Footer ──
+        doc.add_paragraph()
+        if firm_name or practitioner:
+            p = doc.add_paragraph()
+            run = p.add_run(firm_name or practitioner)
+            run.font.size = Pt(10)
+            run.font.italic = True
+        if firm_contact:
+            p = doc.add_paragraph()
+            run = p.add_run(firm_contact)
+            run.font.size = Pt(10)
+            run.font.italic = True
+            run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+
+        # ── Save to bytes ──
+        import io
+        buf = io.BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
+
+    # ---------------------------------------------------------------
     # Helper: render content with flag highlighting
     # ---------------------------------------------------------------
 
