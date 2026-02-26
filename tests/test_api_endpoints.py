@@ -103,6 +103,7 @@ class _FakeCompany:
         self.acn = kwargs.get("acn")
         self.abn = kwargs.get("abn")
         self.total_creditors = kwargs.get("total_creditors", 0)
+        self.total_liabilities = kwargs.get("total_liabilities", 0)
         self.created_at = "2026-01-01T00:00:00"
 
 
@@ -290,18 +291,37 @@ def _build_mock_db(results_in_order: list):
 @pytest.mark.asyncio
 async def test_comparison_endpoint_returns_result():
     """Create engagement with test data, POST compare → 200 with dividend figures."""
-    # run_comparison queries in order: company, plan, creditors, assets
+    # With gap detection gate (5.3), the compare handler now queries tables
+    # multiple times (once for gap detection, once for calculation).
+    # Use a content-based mock that returns appropriate data per table.
     _test_company = _FakeCompany(
         id=_TEST_COMPANY_ID,
         legal_name="Point Blank Medical Pty Ltd",
         total_creditors=985777.37,
+        total_liabilities=985777.37,
     )
-    mock_db = _build_mock_db([
-        _test_company,    # 1st query: select CompanyDB -> .scalar_one_or_none()
-        _PBM_PLAN,        # 2nd query: select PlanParametersDB -> .scalar_one_or_none()
-        _PBM_CREDITORS,   # 3rd query: select CreditorDB -> .scalars().all()
-        _PBM_ASSETS,      # 4th query: select AssetDB -> .scalars().all()
-    ])
+
+    mock_db = AsyncMock()
+
+    async def _execute(stmt):
+        stmt_str = str(stmt)
+        if "companies" in stmt_str:
+            return _FakeScalarResult(_test_company)
+        elif "creditors" in stmt_str:
+            return _FakeScalarResult(_PBM_CREDITORS)
+        elif "assets" in stmt_str:
+            return _FakeScalarResult(_PBM_ASSETS)
+        elif "plan_parameters" in stmt_str:
+            return _FakeScalarResult(_PBM_PLAN)
+        else:
+            return _FakeScalarResult(None)
+
+    mock_db.execute = _execute
+    mock_db.flush = AsyncMock()
+    mock_db.commit = AsyncMock()
+    mock_db.rollback = AsyncMock()
+    mock_db.close = AsyncMock()
+    mock_db.add = lambda x: None
 
     from db.database import get_db as _original_get_db
 

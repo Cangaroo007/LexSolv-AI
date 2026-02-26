@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from fastapi import Depends, FastAPI, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +37,7 @@ from models.schemas import (
     DocumentResponse,
     FirmProfile,
     ForensicReport,
+    GapFillRequest,
     NarrativeSection,
     PreferencePaymentReport,
     RelatedPartyReport,
@@ -44,12 +45,13 @@ from models.schemas import (
     Transaction,
 )
 from db.database import async_engine, Base, get_db, IS_SQLITE
-from db.models import AssetDB, CompanyDB, CreditorDB, DocumentOutputDB, EntityMapDB, NarrativeDB, PlanParametersDB
+from db.models import AssetDB, CompanyDB, CreditorDB, DocumentOutputDB, EntityMapDB, GapFillDB, NarrativeDB, PlanParametersDB
 from services.ai_parser import AIParser
 from services.document_ingester import DocumentIngester, UnsupportedFileTypeError, EmptyFileError
 from services.file_parser import FileParser
 from services.parser_merger import ParserMerger
 from services.creditor_schedule import CreditorScheduleService
+from services.gap_detector import GapDetector
 from services.comparison_engine import ComparisonEngine
 from services.payment_schedule import PaymentScheduleGenerator
 from services.forensic_engine import ForensicAnalyzer
@@ -102,6 +104,9 @@ _ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".xlsx", ".xls"}
 document_ingester = DocumentIngester()
 ai_parser = AIParser()
 parser_merger = ParserMerger()
+
+# 5.3 gap detection
+gap_detector = GapDetector()
 
 # All extensions accepted by the /api/upload/any/* endpoints
 _ANY_UPLOAD_EXTENSIONS = {".csv", ".xlsx", ".xls", ".pdf", ".docx", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".tiff"}
@@ -1410,6 +1415,295 @@ async def save_assets(
 
 
 # ===================================================================
+# Gap Detection endpoints (5.3)
+# ===================================================================
+
+
+async def _build_gap_inputs(
+    cid, db: AsyncSession
+) -> tuple[dict, dict | None]:
+    """
+    Build the uploaded_documents dict and plan_parameters dict from DB state
+    for gap detection.  Returns (uploaded_documents, plan_parameters).
+    """
+    from services.parser_merger import MergedParseResult
+
+    uploaded_documents: dict[str, MergedParseResult | None] = {
+        "aged_payables": None,
+        "balance_sheet": None,
+        "bank_statement": None,
+        "pnl": None,
+    }
+
+    # Check creditors → aged_payables
+    cred_result = await db.execute(
+        sa.select(CreditorDB).where(CreditorDB.company_id == cid)
+    )
+    creditors = cred_result.scalars().all()
+    if creditors:
+        fields: dict = {
+            "creditors": [
+                {
+                    "creditor_name": c.creditor_name,
+                    "amount_claimed": float(c.amount_claimed),
+                    "category": c.category,
+                    "is_related_party": c.is_related_party,
+                }
+                for c in creditors
+            ],
+            "total_claims": sum(float(c.amount_claimed) for c in creditors),
+        }
+        confidence: dict[str, float] = {"creditors": 0.95, "total_claims": 0.95}
+        # Check individual creditor fields
+        all_have_category = all(c.category for c in creditors)
+        if all_have_category:
+            fields["creditor[*].category"] = [c.category for c in creditors]
+            confidence["creditor[*].category"] = 0.9
+        all_have_rp = True  # Boolean field always has a value
+        fields["creditor[*].is_related_party"] = [c.is_related_party for c in creditors]
+        confidence["creditor[*].is_related_party"] = 0.9
+
+        uploaded_documents["aged_payables"] = MergedParseResult(
+            document_type="aged_payables",
+            fields=fields,
+            confidence=confidence,
+            source={k: "db" for k in fields},
+            conflicts=[],
+            parse_summary="Loaded from DB",
+        )
+
+    # Check assets + total_liabilities → balance_sheet
+    asset_result = await db.execute(
+        sa.select(AssetDB).where(AssetDB.company_id == cid)
+    )
+    assets_rows = asset_result.scalars().all()
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if assets_rows or (company and float(company.total_liabilities or 0) > 0):
+        bs_fields: dict = {}
+        bs_confidence: dict[str, float] = {}
+        if company and float(company.total_liabilities or 0) > 0:
+            bs_fields["total_liabilities"] = float(company.total_liabilities)
+            bs_confidence["total_liabilities"] = 0.95
+        if assets_rows:
+            bs_fields["assets"] = [
+                {
+                    "asset_type": a.asset_type,
+                    "book_value": a.book_value,
+                    "recovery_pct": a.liquidation_recovery_pct,
+                }
+                for a in assets_rows
+            ]
+            bs_confidence["assets"] = 0.9
+            all_have_recovery = all(
+                a.liquidation_recovery_pct is not None for a in assets_rows
+            )
+            if all_have_recovery:
+                bs_fields["asset[*].recovery_pct"] = [
+                    a.liquidation_recovery_pct for a in assets_rows
+                ]
+                bs_confidence["asset[*].recovery_pct"] = 0.9
+
+        uploaded_documents["balance_sheet"] = MergedParseResult(
+            document_type="balance_sheet",
+            fields=bs_fields,
+            confidence=bs_confidence,
+            source={k: "db" for k in bs_fields},
+            conflicts=[],
+            parse_summary="Loaded from DB",
+        )
+
+    # Bank statement — derive closing_balance from cash asset if available,
+    # or from gap_fills if previously filled manually.
+    bank_fields: dict = {}
+    bank_confidence: dict[str, float] = {}
+
+    # Check gap_fills for any manually-filled bank statement fields
+    gap_fill_result = await db.execute(
+        sa.select(GapFillDB)
+        .where(GapFillDB.engagement_id == cid)
+        .where(GapFillDB.document_type == "bank_statement")
+    )
+    gap_fills = gap_fill_result.scalars().all()
+    for gf in gap_fills:
+        bank_fields[gf.field_name] = gf.filled_value
+        bank_confidence[gf.field_name] = gf.confidence
+
+    # Derive closing_balance from cash asset if not already filled
+    if "closing_balance" not in bank_fields and assets_rows:
+        cash_assets = [a for a in assets_rows if a.asset_type == "cash"]
+        if cash_assets:
+            bank_fields["closing_balance"] = cash_assets[0].book_value
+            bank_confidence["closing_balance"] = 0.7  # Lower confidence for derived value
+
+    if bank_fields:
+        uploaded_documents["bank_statement"] = MergedParseResult(
+            document_type="bank_statement",
+            fields=bank_fields,
+            confidence=bank_confidence,
+            source={k: "db" for k in bank_fields},
+            conflicts=[],
+            parse_summary="Derived from DB data",
+        )
+
+    # Plan parameters
+    plan_result = await db.execute(
+        sa.select(PlanParametersDB).where(PlanParametersDB.company_id == cid)
+    )
+    plan_row = plan_result.scalar_one_or_none()
+    plan_params: dict | None = None
+    if plan_row:
+        plan_params = {
+            "total_contribution": plan_row.total_contribution,
+            "practitioner_fee_pct": plan_row.practitioner_fee_pct,
+            "num_initial_payments": plan_row.num_initial_payments,
+            "initial_payment_amount": plan_row.initial_payment_amount,
+        }
+
+    return uploaded_documents, plan_params
+
+
+@app.get("/api/engagements/{company_id}/gaps", tags=["Gap Detection"])
+async def get_gaps(company_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Run gap detection and return a GapReport for this engagement.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Verify engagement exists
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    uploaded_documents, plan_params = await _build_gap_inputs(cid, db)
+    report = gap_detector.detect(company_id, uploaded_documents, plan_params)
+    return report.model_dump()
+
+
+@app.post("/api/engagements/{company_id}/gaps/fill", tags=["Gap Detection"])
+async def fill_gap(
+    company_id: str,
+    body: GapFillRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Fill a single gap.  Writes to gap_fills table, re-runs gap detection,
+    and returns the updated GapReport.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    # Verify engagement exists
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Check for previous value (for audit trail)
+    prev_fill = await db.execute(
+        sa.select(GapFillDB)
+        .where(GapFillDB.engagement_id == cid)
+        .where(GapFillDB.field_name == body.field)
+        .where(GapFillDB.document_type == body.document_type)
+        .order_by(GapFillDB.filled_at.desc())
+        .limit(1)
+    )
+    prev_row = prev_fill.scalar_one_or_none()
+    previous_value = prev_row.filled_value if prev_row else None
+
+    # Write to gap_fills table
+    gap_fill = GapFillDB(
+        engagement_id=cid,
+        field_name=body.field,
+        document_type=body.document_type,
+        filled_value=body.value,
+        filled_by=body.filled_by,
+        previous_value=previous_value,
+        confidence=1.0 if body.filled_by in ("practitioner", "director") else 0.8,
+    )
+    db.add(gap_fill)
+    await db.flush()
+
+    # Re-run gap detection and return updated report
+    uploaded_documents, plan_params = await _build_gap_inputs(cid, db)
+    report = gap_detector.detect(company_id, uploaded_documents, plan_params)
+    return report.model_dump()
+
+
+@app.get(
+    "/api/engagements/{company_id}/gaps/questionnaire",
+    tags=["Gap Detection"],
+)
+async def get_director_questionnaire(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Return the director questionnaire — plain-English questions grouped by topic.
+    Excludes practitioner-only gaps.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    uploaded_documents, plan_params = await _build_gap_inputs(cid, db)
+    report = gap_detector.detect(company_id, uploaded_documents, plan_params)
+    questions = gap_detector.get_director_questionnaire(report)
+    return [q.model_dump() for q in questions]
+
+
+@app.get(
+    "/api/engagements/{company_id}/gaps/checklist",
+    tags=["Gap Detection"],
+)
+async def get_practitioner_checklist(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Return the practitioner checklist — all gaps ordered by severity.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    uploaded_documents, plan_params = await _build_gap_inputs(cid, db)
+    report = gap_detector.detect(company_id, uploaded_documents, plan_params)
+    items = gap_detector.get_practitioner_checklist(report)
+    return [item.model_dump() for item in items]
+
+
+# ===================================================================
 # SBR Calculation endpoints (1.4C)
 # ===================================================================
 
@@ -1435,6 +1729,18 @@ async def run_comparison(company_id: str, db: AsyncSession = Depends(get_db)):
     company = company_result.scalar_one_or_none()
     if not company:
         raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # --- Gap detection gate (5.3) -------------------------------------------
+    gap_docs, gap_plan = await _build_gap_inputs(cid, db)
+    gap_report = gap_detector.detect(company_id, gap_docs, gap_plan)
+    if not gap_detector.can_run_comparison(gap_report):
+        return JSONResponse(status_code=422, content={
+            "error": "blocking_gaps",
+            "message": f"{len(gap_report.blocking_gaps)} required fields are missing.",
+            "blocking_gaps": [g.model_dump() for g in gap_report.blocking_gaps],
+            "hint": f"GET /api/engagements/{company_id}/gaps for details",
+        })
+    # -----------------------------------------------------------------------
 
     # Load plan parameters
     plan_result = await db.execute(
