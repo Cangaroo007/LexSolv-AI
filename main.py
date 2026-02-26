@@ -1704,6 +1704,158 @@ async def get_practitioner_checklist(
 
 
 # ===================================================================
+# Director Questionnaire & Conversation Log (5.4)
+# ===================================================================
+
+
+@app.post(
+    "/api/engagements/{company_id}/generate/director-questionnaire",
+    tags=["Gap Detection"],
+)
+async def generate_director_questionnaire_docx(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate a Director Questionnaire .docx from current gap state.
+    Returns the .docx file for download.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    company = company_result.scalar_one_or_none()
+    if not company:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Get questions from gap detector
+    uploaded_documents, plan_params = await _build_gap_inputs(cid, db)
+    report = gap_detector.detect(company_id, uploaded_documents, plan_params)
+    questions = gap_detector.get_director_questionnaire(report)
+
+    engagement = {
+        "company_name": company.legal_name,
+        "acn": company.acn,
+        "practitioner_name": getattr(company, "practitioner_name", None) or "",
+    }
+
+    docx_bytes = document_generator.generate_director_questionnaire_docx(
+        engagement=engagement,
+        questions=[q.model_dump() for q in questions],
+    )
+
+    # Return as downloadable file
+    import io
+    tmp = tempfile.NamedTemporaryFile(suffix=".docx", delete=False)
+    try:
+        tmp.write(docx_bytes)
+        tmp.flush()
+        tmp.close()
+        safe_name = (company.legal_name or "Company").replace(" ", "_")[:40]
+        return FileResponse(
+            tmp.name,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=f"Director_Questionnaire_{safe_name}.docx",
+        )
+    except Exception:
+        os.unlink(tmp.name)
+        raise
+
+
+@app.get(
+    "/api/engagements/{company_id}/gaps/conversation",
+    tags=["Gap Detection"],
+)
+async def get_gap_conversation(
+    company_id: str, db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns the ordered history of gap questions and fills.
+    system_question items for unanswered gaps, practitioner_fill items from gap_fills table.
+    """
+    import uuid as _uuid
+
+    try:
+        cid = _uuid.UUID(company_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid company ID format")
+
+    company_result = await db.execute(
+        sa.select(CompanyDB).where(CompanyDB.id == cid)
+    )
+    if not company_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Engagement not found")
+
+    # Get current gap report for unanswered questions
+    uploaded_documents, plan_params = await _build_gap_inputs(cid, db)
+    report = gap_detector.detect(company_id, uploaded_documents, plan_params)
+
+    # Get all fills from DB
+    fills_result = await db.execute(
+        sa.select(GapFillDB)
+        .where(GapFillDB.engagement_id == cid)
+        .order_by(GapFillDB.filled_at.asc())
+    )
+    fills = fills_result.scalars().all()
+
+    # Build set of filled fields for quick lookup
+    filled_fields = {(f.field_name, f.document_type) for f in fills}
+
+    conversation = []
+
+    # Add system_question items for each unfilled gap
+    all_gaps = (
+        report.blocking_gaps
+        + report.advisory_gaps
+        + report.low_confidence_fields
+    )
+    for gap in all_gaps:
+        key = (gap.field, gap.document_type)
+        if key not in filled_fields:
+            question_text = gap.director_question or gap.practitioner_prompt
+            conversation.append({
+                "id": str(_uuid.uuid4()),
+                "timestamp": report.generated_at.isoformat(),
+                "type": "system_question",
+                "field": gap.field,
+                "document_type": gap.document_type,
+                "question": question_text,
+                "answer": None,
+            })
+
+    # Add practitioner_fill items from DB
+    for fill in fills:
+        # Find the matching question text
+        q_info = gap_detector.GAP_QUESTIONS.get(fill.field_name, {})
+        question_text = (
+            q_info.get("director") or q_info.get("practitioner", f"Fill {fill.field_name}")
+            if isinstance(q_info, dict)
+            else f"Fill {fill.field_name}"
+        )
+        conversation.append({
+            "id": str(fill.id),
+            "timestamp": fill.filled_at.isoformat() if fill.filled_at else None,
+            "type": "practitioner_fill",
+            "field": fill.field_name,
+            "document_type": fill.document_type,
+            "question": question_text,
+            "answer": str(fill.filled_value) if fill.filled_value is not None else None,
+            "confidence": fill.confidence,
+            "filled_by": fill.filled_by,
+        })
+
+    # Sort by timestamp
+    conversation.sort(key=lambda x: x.get("timestamp") or "")
+
+    return {"conversation": conversation}
+
+
+# ===================================================================
 # SBR Calculation endpoints (1.4C)
 # ===================================================================
 

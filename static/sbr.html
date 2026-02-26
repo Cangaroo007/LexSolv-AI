@@ -532,6 +532,195 @@ td input[type="checkbox"] { width: auto; }
     color: var(--text-secondary);
     font-weight: 500;
 }
+
+/* ============================================================
+   GAP STATUS OVERLAY (Task A — 5.4)
+   ============================================================ */
+.gap-status-row {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .75rem;
+    margin-top: .35rem;
+    padding: .25rem .5rem;
+    border-radius: .375rem;
+    line-height: 1.4;
+}
+.gap-status-row.status-ok { background: var(--green-50); color: #166534; }
+.gap-status-row.status-warn { background: var(--amber-50); color: #92400e; }
+.gap-status-row.status-missing { background: var(--red-50); color: #991b1b; }
+.gap-status-row a {
+    color: inherit;
+    font-weight: 600;
+    text-decoration: underline;
+    cursor: pointer;
+    margin-left: .25rem;
+}
+.gap-status-row a:hover { text-decoration: none; }
+
+/* ============================================================
+   GAP PANEL — Panel 9 (Task B — 5.4)
+   ============================================================ */
+.gap-banner {
+    padding: .625rem 1rem;
+    border-radius: .375rem;
+    font-weight: 600;
+    font-size: .85rem;
+    margin-bottom: .75rem;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+.gap-banner.blocking { background: var(--red-50); color: #991b1b; border: 1px solid #fca5a5; }
+.gap-banner.advisory { background: #eff6ff; color: #1e40af; border: 1px solid #93c5fd; }
+
+.gap-section {
+    margin-bottom: 1.25rem;
+    border-radius: .5rem;
+    overflow: hidden;
+}
+.gap-section-header {
+    padding: .5rem .75rem;
+    font-weight: 600;
+    font-size: .82rem;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    cursor: pointer;
+    user-select: none;
+}
+.gap-section-header.blocking-header { background: var(--red-50); color: #991b1b; }
+.gap-section-header.review-header { background: var(--amber-50); color: #92400e; }
+.gap-section-header.advisory-header { background: #eff6ff; color: #1e40af; }
+.gap-section-body { padding: .5rem 0; }
+
+.gap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .8rem;
+}
+.gap-table th {
+    text-align: left;
+    padding: .4rem .5rem;
+    border-bottom: 1.5px solid var(--border);
+    font-weight: 600;
+    font-size: .75rem;
+    color: var(--text-secondary);
+}
+.gap-table td {
+    padding: .4rem .5rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+.gap-table tr:last-child td { border-bottom: none; }
+
+.gap-inline-input {
+    width: 120px;
+    padding: .25rem .4rem;
+    border: 1px solid var(--border);
+    border-radius: .25rem;
+    font-size: .8rem;
+}
+.gap-inline-input.manual-entry {
+    border-color: var(--amber-500);
+    background: var(--override-bg);
+}
+.gap-inline-input:focus {
+    outline: none;
+    border-color: var(--brand-500);
+    box-shadow: 0 0 0 2px rgba(59,130,246,.15);
+}
+
+.gap-btn {
+    padding: .2rem .5rem;
+    border: none;
+    border-radius: .25rem;
+    cursor: pointer;
+    font-size: .75rem;
+    font-weight: 500;
+}
+.gap-btn-save { background: var(--brand-500); color: #fff; }
+.gap-btn-save:hover { background: var(--brand-600); }
+.gap-btn-confirm { background: var(--green-500); color: #fff; }
+.gap-btn-confirm:hover { background: var(--green-600); }
+.gap-btn-link {
+    background: none;
+    color: var(--brand-600);
+    text-decoration: underline;
+    padding: .2rem 0;
+}
+.gap-btn-link:hover { text-decoration: none; }
+
+.gap-confirmed {
+    color: var(--green-600);
+    font-weight: 500;
+}
+.gap-confirmed::before { content: '\2713 '; }
+.gap-overridden {
+    background: var(--override-bg);
+    border-radius: .25rem;
+    padding: .1rem .3rem;
+    color: #92400e;
+    font-weight: 500;
+}
+
+.gap-source-label {
+    font-size: .7rem;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Progress meter */
+.gap-progress-wrap {
+    margin: .5rem 0;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    font-size: .78rem;
+    color: var(--text-secondary);
+}
+.gap-progress-bar {
+    flex: 1;
+    height: .5rem;
+    background: #e2e8f0;
+    border-radius: .25rem;
+    overflow: hidden;
+}
+.gap-progress-fill {
+    height: 100%;
+    background: var(--brand-500);
+    border-radius: .25rem;
+    transition: width .3s ease;
+}
+
+/* Collapsible */
+.gap-collapsed .gap-section-body { display: none; }
+.gap-section-header .chevron { transition: transform .2s; }
+.gap-collapsed .gap-section-header .chevron { transform: rotate(-90deg); }
+
+/* Tooltip for comparison button */
+.btn-comparison-wrap { position: relative; display: inline-block; }
+.btn-comparison-wrap .tooltip-text {
+    visibility: hidden;
+    background: #1e293b;
+    color: #fff;
+    font-size: .72rem;
+    padding: .35rem .6rem;
+    border-radius: .375rem;
+    position: absolute;
+    bottom: 110%;
+    left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap;
+    z-index: 10;
+    opacity: 0;
+    transition: opacity .15s;
+    pointer-events: none;
+}
+.btn-comparison-wrap:hover .tooltip-text {
+    visibility: visible;
+    opacity: 1;
+}
 </style>
 </head>
 <body>
@@ -625,33 +814,45 @@ td input[type="checkbox"] { width: auto; }
     </div>
     <div class="card-body">
         <div class="upload-grid">
-            <div class="drop-zone" id="dz-aged-payables" data-endpoint="/api/upload/aged-payables" data-type="aged-payables">
-                <div class="dz-icon">📊</div>
-                <div class="dz-label">Aged Payables</div>
-                <div class="dz-hint">Drop CSV / Excel</div>
-                <div class="dz-status" id="dz-status-aged-payables"></div>
-                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'aged-payables')">
+            <div>
+                <div class="drop-zone" id="dz-aged-payables" data-endpoint="/api/upload/aged-payables" data-type="aged-payables">
+                    <div class="dz-icon">📊</div>
+                    <div class="dz-label">Aged Payables</div>
+                    <div class="dz-hint">Drop CSV / Excel</div>
+                    <div class="dz-status" id="dz-status-aged-payables"></div>
+                    <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'aged-payables')">
+                </div>
+                <div class="gap-status-row" id="gap-status-aged_payables" style="display:none;"></div>
             </div>
-            <div class="drop-zone" id="dz-balance-sheet" data-endpoint="/api/upload/balance-sheet" data-type="balance-sheet">
-                <div class="dz-icon">📋</div>
-                <div class="dz-label">Balance Sheet</div>
-                <div class="dz-hint">Drop CSV / Excel</div>
-                <div class="dz-status" id="dz-status-balance-sheet"></div>
-                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'balance-sheet')">
+            <div>
+                <div class="drop-zone" id="dz-balance-sheet" data-endpoint="/api/upload/balance-sheet" data-type="balance-sheet">
+                    <div class="dz-icon">📋</div>
+                    <div class="dz-label">Balance Sheet</div>
+                    <div class="dz-hint">Drop CSV / Excel</div>
+                    <div class="dz-status" id="dz-status-balance-sheet"></div>
+                    <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'balance-sheet')">
+                </div>
+                <div class="gap-status-row" id="gap-status-balance_sheet" style="display:none;"></div>
             </div>
-            <div class="drop-zone" id="dz-bank-statement" data-endpoint="/api/upload/bank-statement" data-type="bank-statement">
-                <div class="dz-icon">🏦</div>
-                <div class="dz-label">Bank Statement</div>
-                <div class="dz-hint">Drop CSV / Excel</div>
-                <div class="dz-status" id="dz-status-bank-statement"></div>
-                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'bank-statement')">
+            <div>
+                <div class="drop-zone" id="dz-bank-statement" data-endpoint="/api/upload/bank-statement" data-type="bank-statement">
+                    <div class="dz-icon">🏦</div>
+                    <div class="dz-label">Bank Statement</div>
+                    <div class="dz-hint">Drop CSV / Excel</div>
+                    <div class="dz-status" id="dz-status-bank-statement"></div>
+                    <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'bank-statement')">
+                </div>
+                <div class="gap-status-row" id="gap-status-bank_statement" style="display:none;"></div>
             </div>
-            <div class="drop-zone" id="dz-pnl" data-endpoint="/api/upload/pnl" data-type="pnl">
-                <div class="dz-icon">📈</div>
-                <div class="dz-label">P&amp;L</div>
-                <div class="dz-hint">Drop CSV / Excel</div>
-                <div class="dz-status" id="dz-status-pnl"></div>
-                <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'pnl')">
+            <div>
+                <div class="drop-zone" id="dz-pnl" data-endpoint="/api/upload/pnl" data-type="pnl">
+                    <div class="dz-icon">📈</div>
+                    <div class="dz-label">P&amp;L</div>
+                    <div class="dz-hint">Drop CSV / Excel</div>
+                    <div class="dz-status" id="dz-status-pnl"></div>
+                    <input type="file" accept=".csv,.xlsx,.xls" onchange="handleFileSelect(this, 'pnl')">
+                </div>
+                <div class="gap-status-row" id="gap-status-plan_parameters" style="display:none;"></div>
             </div>
         </div>
         <div id="upload-info" class="text-muted mt-md"></div>
@@ -778,7 +979,10 @@ td input[type="checkbox"] { width: auto; }
 <div class="card disabled" id="panel-comparison">
     <div class="card-header">
         <h2><span class="step">6</span> Comparison Result</h2>
-        <button class="btn btn-primary btn-sm" id="btn-run-comparison" onclick="runComparison()">Run Comparison</button>
+        <span class="btn-comparison-wrap" id="btn-comparison-wrap">
+            <button class="btn btn-primary btn-sm" id="btn-run-comparison" onclick="runComparison()">Run Comparison</button>
+            <span class="tooltip-text" id="comparison-tooltip" style="display:none;"></span>
+        </span>
     </div>
     <div class="card-body">
         <div id="comparison-placeholder" class="text-muted" style="text-align:center;padding:1.5rem 0;">
@@ -873,6 +1077,98 @@ td input[type="checkbox"] { width: auto; }
                 <li class="text-muted">No documents generated yet.</li>
             </ul>
         </div>
+    </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ⑨ GAP REVIEW                                                  -->
+<!-- ============================================================ -->
+<div class="card disabled" id="panel-gaps">
+    <div class="card-header">
+        <h2><span class="step">9</span> Gap Review</h2>
+    </div>
+    <div class="card-body">
+        <!-- Blocking banner -->
+        <div class="gap-banner blocking" id="gap-blocking-banner" style="display:none;">
+            <span id="gap-blocking-banner-text"></span>
+        </div>
+
+        <!-- Section 1: Blocking Gaps -->
+        <div class="gap-section" id="gap-section-blocking" style="display:none;">
+            <div class="gap-section-header blocking-header">
+                <span class="chevron">&#9660;</span> Blocking Gaps
+            </div>
+            <div class="gap-section-body">
+                <table class="gap-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Document</th>
+                            <th>Why it matters</th>
+                            <th>Fix</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gap-blocking-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Section 2: Review Flagged Values -->
+        <div class="gap-section" id="gap-section-review" style="display:none;">
+            <div class="gap-section-header review-header">
+                <span class="chevron">&#9660;</span> Review Flagged Values
+            </div>
+            <div class="gap-section-body">
+                <table class="gap-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Document</th>
+                            <th>Extracted Value</th>
+                            <th>Confidence</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gap-review-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Section 3: Advisory Gaps -->
+        <div class="gap-section gap-collapsed" id="gap-section-advisory" style="display:none;">
+            <div class="gap-section-header advisory-header" onclick="toggleGapSection('gap-section-advisory')">
+                <span class="chevron">&#9660;</span> Advisory Gaps
+            </div>
+            <div class="gap-section-body">
+                <div class="gap-progress-wrap" id="gap-progress-wrap">
+                    <div class="gap-progress-bar">
+                        <div class="gap-progress-fill" id="gap-progress-fill" style="width:0%"></div>
+                    </div>
+                    <span id="gap-progress-text">0% complete</span>
+                </div>
+                <table class="gap-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Document</th>
+                            <th>Why it matters</th>
+                            <th>Fix</th>
+                        </tr>
+                    </thead>
+                    <tbody id="gap-advisory-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Director Questionnaire button -->
+        <div class="flex-end mt-md" id="gap-questionnaire-wrap">
+            <button class="btn btn-primary btn-sm" id="btn-generate-questionnaire" onclick="generateDirectorQuestionnaire()">Generate Director Questionnaire</button>
+        </div>
+
+        <div id="gap-empty-state" class="text-muted" style="text-align:center;padding:1.5rem 0;">
+            Gap analysis will appear here after file uploads.
+        </div>
+        <div id="error-gaps"></div>
     </div>
 </div>
 
@@ -1036,7 +1332,7 @@ function enablePanel(panelId) {
 
 function enableAllPanels() {
     ['panel-upload', 'panel-creditors', 'panel-assets', 'panel-plan',
-     'panel-comparison', 'panel-narrative', 'panel-documents'].forEach(enablePanel);
+     'panel-comparison', 'panel-narrative', 'panel-documents', 'panel-gaps'].forEach(enablePanel);
 }
 
 /* =============================================================
@@ -1194,9 +1490,12 @@ function resetEngagement() {
 
     // Disable panels
     ['panel-upload', 'panel-creditors', 'panel-assets', 'panel-plan',
-     'panel-comparison', 'panel-narrative', 'panel-documents'].forEach(id => {
+     'panel-comparison', 'panel-narrative', 'panel-documents', 'panel-gaps'].forEach(id => {
         document.getElementById(id)?.classList.add('disabled');
     });
+
+    // Reset gap panel state
+    resetGapPanel();
 
     // Clear all errors
     document.querySelectorAll('[id^="error-"]').forEach(el => el.innerHTML = '');
@@ -1338,6 +1637,8 @@ async function loadEngagement() {
         loadNarratives();
         // Load doc history
         loadDocumentHistory();
+        // Load gap status (5.4)
+        refreshGapStatus();
 
     } catch (err) {
         showError('error-engagement', formatApiError(err));
@@ -1442,6 +1743,9 @@ async function uploadFile(type, file) {
             if (revenue !== undefined) detail += ' Revenue: ' + formatCurrency(revenue) + '.';
             info.textContent = detail;
         }
+
+        // Refresh gap status after each upload (Task A — 5.4)
+        if (currentEngagementId) refreshGapStatus();
 
     } catch (err) {
         dz.classList.add('error');
@@ -2088,6 +2392,401 @@ async function loadDocumentHistory() {
         });
     } catch {
         // Document history may not exist yet
+    }
+}
+
+/* =============================================================
+   ⑨ GAP REVIEW PANEL (5.4)
+   ============================================================= */
+let lastGapReport = null;  // Cache latest gap report
+
+const DOC_TYPE_LABELS = {
+    aged_payables: 'Aged Payables',
+    balance_sheet: 'Balance Sheet',
+    bank_statement: 'Bank Statement',
+    plan_parameters: 'Plan Parameters',
+    pnl: 'P&L',
+};
+
+const FIELD_LABELS = {
+    closing_balance: 'Closing Balance',
+    total_liabilities: 'Total Liabilities',
+    total_claims: 'Total Claims',
+    total_contribution: 'Contribution Amount',
+    practitioner_fee_pct: 'Practitioner Fee %',
+    creditors: 'Creditor Schedule',
+    assets: 'Asset Register',
+    'creditor[*].category': 'Creditor Categories',
+    'creditor[*].is_related_party': 'Related Party Flags',
+    'asset[*].recovery_pct': 'Recovery Percentages',
+    period_end_date: 'Period End Date',
+    num_initial_payments: 'Initial Payment Count',
+    initial_payment_amount: 'Initial Payment Amount',
+};
+
+const FIELD_REASONS = {
+    closing_balance: 'Required for cash position comparison',
+    total_liabilities: 'Required for SBR vs liquidation calculation',
+    total_claims: 'Required to calculate creditor dividend',
+    total_contribution: 'Required for SBR dividend calculation',
+    practitioner_fee_pct: 'Required to calculate net distribution',
+    creditors: 'Required to build creditor schedule',
+    assets: 'Required for asset recovery estimation',
+    'creditor[*].category': 'Improves accuracy of creditor classification',
+    'creditor[*].is_related_party': 'Affects voting rights and distribution',
+    'asset[*].recovery_pct': 'Affects liquidation recovery estimate',
+    period_end_date: 'Ensures comparison uses correct period',
+    num_initial_payments: 'Affects payment schedule calculation',
+    initial_payment_amount: 'Affects payment schedule calculation',
+};
+
+/** Is this field a simple scalar that can use an inline input? */
+function isScalarField(field) {
+    return ['closing_balance', 'total_liabilities', 'total_claims', 'total_contribution',
+            'practitioner_fee_pct', 'period_end_date', 'num_initial_payments',
+            'initial_payment_amount'].includes(field);
+}
+
+function resetGapPanel() {
+    lastGapReport = null;
+    document.getElementById('gap-blocking-banner').style.display = 'none';
+    document.getElementById('gap-section-blocking').style.display = 'none';
+    document.getElementById('gap-section-review').style.display = 'none';
+    document.getElementById('gap-section-advisory').style.display = 'none';
+    document.getElementById('gap-empty-state').style.display = '';
+    document.getElementById('gap-questionnaire-wrap').style.display = 'none';
+    // Reset upload gap status rows
+    ['aged_payables', 'balance_sheet', 'bank_statement', 'plan_parameters'].forEach(dt => {
+        const el = document.getElementById('gap-status-' + dt);
+        if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+    });
+    // Reset comparison button
+    updateComparisonButton(0);
+}
+
+async function refreshGapStatus() {
+    if (!currentEngagementId) return;
+    try {
+        const report = await API.get('/api/engagements/' + currentEngagementId + '/gaps');
+        lastGapReport = report;
+        renderUploadGapStatus(report);
+        renderGapPanel(report);
+        updateComparisonButton(report.blocking_gaps ? report.blocking_gaps.length : 0);
+    } catch (err) {
+        console.error('Gap status refresh failed:', err);
+    }
+}
+
+/* ---- Task A: Upload Panel gap status overlay ---- */
+function renderUploadGapStatus(report) {
+    // Map document types to their gap info
+    const docTypes = ['aged_payables', 'balance_sheet', 'bank_statement', 'plan_parameters'];
+
+    docTypes.forEach(dt => {
+        const el = document.getElementById('gap-status-' + dt);
+        if (!el) return;
+
+        const isMissing = (report.missing_documents || []).includes(dt);
+        const blocking = (report.blocking_gaps || []).filter(g => g.document_type === dt);
+        const advisory = (report.advisory_gaps || []).filter(g => g.document_type === dt);
+        const lowConf = (report.low_confidence_fields || []).filter(g => g.document_type === dt);
+
+        if (isMissing && blocking.length > 0) {
+            // Not uploaded with blocking gaps
+            el.className = 'gap-status-row status-missing';
+            const fieldNames = blocking.map(g => FIELD_LABELS[g.field] || g.field).join(', ');
+            el.innerHTML = '\u274C ' + DOC_TYPE_LABELS[dt] + ' \u2014 ' + fieldNames + ' missing' +
+                ' <a onclick="scrollToGapPanel()">Set now \u2192</a>';
+            el.style.display = '';
+        } else if (blocking.length > 0) {
+            // Uploaded but has blocking gaps
+            el.className = 'gap-status-row status-missing';
+            el.innerHTML = '\u274C ' + DOC_TYPE_LABELS[dt] + ' \u2014 ' + blocking.length + ' blocking field' +
+                (blocking.length > 1 ? 's' : '') +
+                ' <a onclick="scrollToGapPanel()">Set now \u2192</a>';
+            el.style.display = '';
+        } else if (lowConf.length > 0 || advisory.length > 0) {
+            // Has warnings
+            const totalItems = lowConf.length + advisory.length;
+            const extracted = (report.blocking_gaps || []).concat(report.advisory_gaps || [], report.low_confidence_fields || [])
+                .filter(g => g.document_type === dt);
+            el.className = 'gap-status-row status-warn';
+            let msg = '\u26A0\uFE0F ' + DOC_TYPE_LABELS[dt] + ' \u2014 ';
+            if (lowConf.length > 0) msg += lowConf.length + ' low-confidence field' + (lowConf.length > 1 ? 's' : '');
+            if (lowConf.length > 0 && advisory.length > 0) msg += ', ';
+            if (advisory.length > 0) msg += advisory.length + ' advisory';
+            el.innerHTML = msg + ' <a onclick="scrollToGapPanel()">Review \u2192</a>';
+            el.style.display = '';
+        } else if (!isMissing) {
+            // All good
+            el.className = 'gap-status-row status-ok';
+            el.innerHTML = '\u2705 ' + DOC_TYPE_LABELS[dt] + ' \u2014 no gaps detected';
+            el.style.display = '';
+        } else {
+            el.style.display = 'none';
+        }
+    });
+}
+
+function scrollToGapPanel() {
+    const panel = document.getElementById('panel-gaps');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/* ---- Task B: Gap Panel rendering ---- */
+function renderGapPanel(report) {
+    const blocking = report.blocking_gaps || [];
+    const lowConf = report.low_confidence_fields || [];
+    const advisory = report.advisory_gaps || [];
+    const hasContent = blocking.length > 0 || lowConf.length > 0 || advisory.length > 0;
+
+    document.getElementById('gap-empty-state').style.display = hasContent ? 'none' : '';
+    document.getElementById('gap-questionnaire-wrap').style.display = hasContent ? '' : 'none';
+
+    // Blocking banner
+    const banner = document.getElementById('gap-blocking-banner');
+    if (blocking.length > 0) {
+        banner.style.display = '';
+        document.getElementById('gap-blocking-banner-text').textContent =
+            '\u26D4 ' + blocking.length + ' blocking gap' + (blocking.length > 1 ? 's' : '') +
+            ' must be resolved before running comparison';
+    } else {
+        banner.style.display = 'none';
+    }
+
+    // Section 1: Blocking Gaps
+    const blockingSection = document.getElementById('gap-section-blocking');
+    const blockingTbody = document.getElementById('gap-blocking-tbody');
+    if (blocking.length > 0) {
+        blockingSection.style.display = '';
+        blockingTbody.innerHTML = '';
+        blocking.forEach(gap => {
+            blockingTbody.appendChild(buildBlockingRow(gap));
+        });
+    } else {
+        blockingSection.style.display = 'none';
+    }
+
+    // Section 2: Review Flagged Values
+    const reviewSection = document.getElementById('gap-section-review');
+    const reviewTbody = document.getElementById('gap-review-tbody');
+    if (lowConf.length > 0) {
+        reviewSection.style.display = '';
+        reviewTbody.innerHTML = '';
+        lowConf.forEach(gap => {
+            reviewTbody.appendChild(buildReviewRow(gap));
+        });
+    } else {
+        reviewSection.style.display = 'none';
+    }
+
+    // Section 3: Advisory Gaps
+    const advisorySection = document.getElementById('gap-section-advisory');
+    const advisoryTbody = document.getElementById('gap-advisory-tbody');
+    if (advisory.length > 0) {
+        advisorySection.style.display = '';
+        advisoryTbody.innerHTML = '';
+        advisory.forEach(gap => {
+            advisoryTbody.appendChild(buildBlockingRow(gap));
+        });
+        // Progress meter
+        const pct = report.completion_pct ?? 0;
+        document.getElementById('gap-progress-fill').style.width = pct + '%';
+        document.getElementById('gap-progress-text').textContent =
+            Math.round(pct) + '% complete \u2014 ' + advisory.length + ' advisory item' +
+            (advisory.length > 1 ? 's' : '') + ' remaining';
+    } else {
+        advisorySection.style.display = 'none';
+    }
+}
+
+function buildBlockingRow(gap) {
+    const tr = document.createElement('tr');
+    const label = FIELD_LABELS[gap.field] || gap.field;
+    const docLabel = DOC_TYPE_LABELS[gap.document_type] || gap.document_type;
+    const reason = FIELD_REASONS[gap.field] || gap.practitioner_prompt || '';
+
+    let fixHtml = '';
+    if (isScalarField(gap.field)) {
+        const inputType = gap.field.includes('date') ? 'text' : 'number';
+        const placeholder = gap.field.includes('date') ? 'YYYY-MM-DD' : '0.00';
+        fixHtml = '<input type="' + inputType + '" class="gap-inline-input" placeholder="' + placeholder + '" ' +
+            'id="gap-fix-' + gap.field + '-' + gap.document_type + '"> ' +
+            '<button class="gap-btn gap-btn-save" onclick="saveGapFix(\'' +
+            escapeHtml(gap.field) + '\', \'' + escapeHtml(gap.document_type) + '\')">Save</button>';
+    } else {
+        // Document-level gap — offer re-upload
+        const dzType = gap.document_type.replace(/_/g, '-');
+        fixHtml = '<button class="gap-btn gap-btn-link" onclick="document.getElementById(\'dz-' +
+            dzType + '\')?.scrollIntoView({behavior:\'smooth\'})">Re-upload document</button>';
+    }
+
+    tr.innerHTML =
+        '<td>' + escapeHtml(label) + '</td>' +
+        '<td>' + escapeHtml(docLabel) + '</td>' +
+        '<td style="font-size:.75rem;">' + escapeHtml(reason) + '</td>' +
+        '<td>' + fixHtml + '</td>';
+    return tr;
+}
+
+function buildReviewRow(gap) {
+    const tr = document.createElement('tr');
+    const label = FIELD_LABELS[gap.field] || gap.field;
+    const docLabel = DOC_TYPE_LABELS[gap.document_type] || gap.document_type;
+    const val = gap.current_value != null ? String(gap.current_value) : '\u2014';
+    const conf = (gap.current_confidence * 100).toFixed(0) + '%';
+
+    const fieldId = 'gap-review-' + gap.field + '-' + gap.document_type;
+
+    const actionHtml =
+        '<span id="' + fieldId + '-status">' +
+        '<button class="gap-btn gap-btn-confirm" onclick="confirmGapValue(\'' +
+            escapeHtml(gap.field) + '\', \'' + escapeHtml(gap.document_type) + '\', ' +
+            escapeHtml(JSON.stringify(gap.current_value)) + ')">Confirm</button> ' +
+        '<input type="text" class="gap-inline-input" placeholder="Override..." ' +
+            'id="' + fieldId + '-override" style="width:90px;"> ' +
+        '<button class="gap-btn gap-btn-save" onclick="overrideGapValue(\'' +
+            escapeHtml(gap.field) + '\', \'' + escapeHtml(gap.document_type) + '\', \'' +
+            fieldId + '\', ' + escapeHtml(JSON.stringify(gap.current_value)) + ')">Save</button>' +
+        '</span>';
+
+    tr.innerHTML =
+        '<td>' + escapeHtml(label) + '</td>' +
+        '<td>' + escapeHtml(docLabel) + '</td>' +
+        '<td>' + escapeHtml(val) + '</td>' +
+        '<td style="color:' + (gap.current_confidence < 0.4 ? 'var(--red-500)' : 'var(--amber-500)') + ';font-weight:500;">' + conf + '</td>' +
+        '<td>' + actionHtml + '</td>';
+    return tr;
+}
+
+async function saveGapFix(field, documentType) {
+    if (!currentEngagementId) return;
+    const input = document.getElementById('gap-fix-' + field + '-' + documentType);
+    if (!input || !input.value.trim()) return;
+    clearError('error-gaps');
+
+    let value = input.value.trim();
+    // Convert to number if numeric
+    if (!isNaN(value) && value !== '') value = parseFloat(value);
+
+    try {
+        const report = await API.post('/api/engagements/' + currentEngagementId + '/gaps/fill', {
+            field: field,
+            document_type: documentType,
+            value: value,
+            filled_by: 'practitioner',
+        });
+        lastGapReport = report;
+        renderUploadGapStatus(report);
+        renderGapPanel(report);
+        updateComparisonButton(report.blocking_gaps ? report.blocking_gaps.length : 0);
+    } catch (err) {
+        showError('error-gaps', formatApiError(err));
+    }
+}
+
+async function confirmGapValue(field, documentType, currentValue) {
+    if (!currentEngagementId) return;
+    clearError('error-gaps');
+
+    try {
+        const report = await API.post('/api/engagements/' + currentEngagementId + '/gaps/fill', {
+            field: field,
+            document_type: documentType,
+            value: currentValue,
+            filled_by: 'practitioner',
+        });
+        lastGapReport = report;
+        renderUploadGapStatus(report);
+        renderGapPanel(report);
+        updateComparisonButton(report.blocking_gaps ? report.blocking_gaps.length : 0);
+    } catch (err) {
+        showError('error-gaps', formatApiError(err));
+    }
+}
+
+async function overrideGapValue(field, documentType, fieldId, originalValue) {
+    if (!currentEngagementId) return;
+    const input = document.getElementById(fieldId + '-override');
+    if (!input || !input.value.trim()) return;
+    clearError('error-gaps');
+
+    let value = input.value.trim();
+    if (!isNaN(value) && value !== '') value = parseFloat(value);
+
+    try {
+        const report = await API.post('/api/engagements/' + currentEngagementId + '/gaps/fill', {
+            field: field,
+            document_type: documentType,
+            value: value,
+            filled_by: 'practitioner',
+        });
+        lastGapReport = report;
+        renderUploadGapStatus(report);
+        renderGapPanel(report);
+        updateComparisonButton(report.blocking_gaps ? report.blocking_gaps.length : 0);
+    } catch (err) {
+        showError('error-gaps', formatApiError(err));
+    }
+}
+
+function toggleGapSection(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) section.classList.toggle('gap-collapsed');
+}
+
+/* ---- Comparison button gating ---- */
+function updateComparisonButton(blockingCount) {
+    const btn = document.getElementById('btn-run-comparison');
+    const tooltip = document.getElementById('comparison-tooltip');
+    if (!btn) return;
+
+    if (blockingCount > 0) {
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        btn.style.cursor = 'not-allowed';
+        if (tooltip) {
+            tooltip.style.display = '';
+            tooltip.textContent = blockingCount + ' blocking gap' + (blockingCount > 1 ? 's' : '') +
+                ' must be resolved first \u2014 see Gap Review panel';
+        }
+    } else {
+        btn.disabled = false;
+        btn.style.opacity = '';
+        btn.style.cursor = '';
+        if (tooltip) tooltip.style.display = 'none';
+    }
+}
+
+/* ---- Director Questionnaire download ---- */
+async function generateDirectorQuestionnaire() {
+    if (!currentEngagementId) return;
+    clearError('error-gaps');
+    const btn = document.getElementById('btn-generate-questionnaire');
+    setLoading(btn, true, 'Generating...');
+
+    try {
+        const res = await fetch('/api/engagements/' + currentEngagementId + '/generate/director-questionnaire', {
+            method: 'POST'
+        });
+        if (!res.ok) {
+            let msg;
+            try { msg = await res.text(); } catch { msg = res.statusText; }
+            throw new Error(msg);
+        }
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Director_Questionnaire.docx';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    } catch (err) {
+        showError('error-gaps', formatApiError(err));
+    } finally {
+        setLoading(btn, false);
     }
 }
 
