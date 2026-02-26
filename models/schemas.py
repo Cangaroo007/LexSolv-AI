@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -533,3 +533,68 @@ class DocumentOutputListResponse(BaseModel):
 
     engagement_id: str
     documents: List[DocumentOutputEntry]
+
+
+# ---------------------------------------------------------------------------
+# Gap Detection Engine — schemas (Prompt 5.3)
+# ---------------------------------------------------------------------------
+
+
+class GapSeverity(str, Enum):
+    BLOCKING = "blocking"
+    ADVISORY = "advisory"
+    LOW_CONFIDENCE = "low_confidence"
+
+
+class GapItem(BaseModel):
+    """A single detected gap in the engagement data."""
+
+    field: str
+    document_type: str
+    severity: str                    # "blocking" | "advisory" | "low_confidence"
+    current_value: Any | None = None
+    current_confidence: float = 0.0
+    practitioner_prompt: str
+    director_question: str | None = None
+    can_autofill: bool = False       # True if derivable from other uploaded data
+
+
+class GapReport(BaseModel):
+    """Complete gap detection report for an engagement."""
+
+    engagement_id: str
+    generated_at: datetime
+    blocking_gaps: list[GapItem]
+    advisory_gaps: list[GapItem]
+    low_confidence_fields: list[GapItem]
+    can_run_comparison: bool
+    completion_pct: float            # 0–100
+    missing_documents: list[str]     # Document types not yet uploaded at all
+
+
+class DirectorQuestion(BaseModel):
+    """A plain-English question for the director to answer."""
+
+    order: int
+    topic: str                       # "financial" | "creditors" | "operations"
+    field: str
+    question: str
+
+
+class PractitionerItem(BaseModel):
+    """A checklist item for the practitioner to resolve."""
+
+    order: int
+    severity: str
+    field: str
+    document_type: str
+    instruction: str
+
+
+class GapFillRequest(BaseModel):
+    """Request body for POST /gaps/fill."""
+
+    field: str
+    document_type: str
+    value: Any
+    filled_by: str  # "practitioner" | "director"

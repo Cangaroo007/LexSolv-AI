@@ -419,6 +419,36 @@ class NarrativeDB(Base):
 # DocumentOutput — tracks generated .docx files with version history (3.2)
 # ---------------------------------------------------------------------------
 
+class GapFillDB(Base):
+    __tablename__ = "gap_fills"
+
+    id = Column(UUIDType(), primary_key=True, default=uuid.uuid4)
+    engagement_id = Column(
+        UUIDType(),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    field_name = Column(String, nullable=False)
+    document_type = Column(String, nullable=False)
+    filled_value = Column(JSONBType(), nullable=False)
+    filled_by = Column(String, nullable=False)  # "practitioner" | "director" | "ai_inferred"
+    filled_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    previous_value = Column(JSONBType(), nullable=True)  # audit trail
+    confidence = Column(Float, nullable=False, default=1.0)
+    notes = Column(String, nullable=True)
+
+    # Relationships
+    company = relationship("CompanyDB", backref="gap_fills")
+
+    __table_args__ = (
+        Index("idx_gap_fills_engagement", "engagement_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"<GapFill {self.field_name} engagement={self.engagement_id} by={self.filled_by}>"
+
+
 class DocumentOutputDB(Base):
     __tablename__ = "document_outputs"
 
