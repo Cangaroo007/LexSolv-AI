@@ -45,7 +45,10 @@ from models.schemas import (
 )
 from db.database import async_engine, Base, get_db, IS_SQLITE
 from db.models import AssetDB, CompanyDB, CreditorDB, DocumentOutputDB, EntityMapDB, NarrativeDB, PlanParametersDB
+from services.ai_parser import AIParser
+from services.document_ingester import DocumentIngester, UnsupportedFileTypeError, EmptyFileError
 from services.file_parser import FileParser
+from services.parser_merger import ParserMerger
 from services.creditor_schedule import CreditorScheduleService
 from services.comparison_engine import ComparisonEngine
 from services.payment_schedule import PaymentScheduleGenerator
@@ -94,6 +97,14 @@ comparison_engine = ComparisonEngine()
 payment_schedule_generator = PaymentScheduleGenerator()
 
 _ALLOWED_UPLOAD_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+
+# New 5.2 service singletons
+document_ingester = DocumentIngester()
+ai_parser = AIParser()
+parser_merger = ParserMerger()
+
+# All extensions accepted by the /api/upload/any/* endpoints
+_ANY_UPLOAD_EXTENSIONS = {".csv", ".xlsx", ".xls", ".pdf", ".docx", ".jpg", ".jpeg", ".png", ".webp", ".heic", ".tiff"}
 
 
 @asynccontextmanager
@@ -858,6 +869,182 @@ async def upload_pnl(file: UploadFile):
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         os.unlink(tmp_path)
+
+
+# ===================================================================
+# Universal Upload endpoints (5.2) — dual parser: structured + AI
+# ===================================================================
+
+_DOC_TYPE_MAP = {
+    "aged-payables": "aged_payables",
+    "balance-sheet": "balance_sheet",
+    "bank-statement": "bank_statement",
+    "pnl": "pnl",
+}
+
+_STRUCTURED_PARSER_DISPATCH = {
+    "aged_payables": "parse_aged_payables",
+    "balance_sheet": "parse_balance_sheet",
+    "bank_statement": "parse_bank_statement",
+    "pnl": "parse_pnl",
+}
+
+
+def _validate_any_upload_extension(filename: str | None) -> str:
+    """Validate file extension for /api/upload/any/* endpoints. Raises 400 on failure."""
+    if not filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _ANY_UPLOAD_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Supported formats: {', '.join(sorted(_ANY_UPLOAD_EXTENSIONS))}",
+        )
+    return ext
+
+
+async def _handle_any_upload(file: UploadFile, document_type: str) -> dict:
+    """
+    Shared handler for /api/upload/any/* endpoints.
+
+    1. Calls DocumentIngester.ingest()
+    2. If is_structured=True → also runs FileParser
+    3. Runs AIParser.parse() (always)
+    4. Calls ParserMerger.merge()
+    5. Returns MergedParseResult as JSON
+    """
+    ext = _validate_any_upload_extension(file.filename)
+    content = await file.read()
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    try:
+        # 1. Ingest the raw document
+        raw = document_ingester.ingest(content, file.filename or f"upload{ext}")
+    except UnsupportedFileTypeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except EmptyFileError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    # 2. Run structured parser if applicable
+    structured_result = None
+    if raw.is_structured:
+        try:
+            tmp = tempfile.NamedTemporaryFile(suffix=ext, delete=False)
+            try:
+                tmp.write(content)
+                tmp.flush()
+                tmp_path = tmp.name
+            finally:
+                tmp.close()
+
+            method_name = _STRUCTURED_PARSER_DISPATCH.get(document_type)
+            if method_name:
+                parser_method = getattr(file_parser, method_name)
+                raw_parsed = parser_method(tmp_path)
+                # parse_aged_payables returns list[dict] — wrap in a dict
+                if isinstance(raw_parsed, list):
+                    structured_result = {"creditors": raw_parsed}
+                else:
+                    structured_result = raw_parsed
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            logger.warning("Structured parser failed for %s: %s", document_type, exc)
+            structured_result = None
+        finally:
+            if 'tmp_path' in dir():
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
+    # 3. Run AI parser (always)
+    ai_result = None
+    try:
+        ai_result = await ai_parser.parse(
+            raw=raw,
+            document_type=document_type,
+            engagement_id="upload",
+            known_entities={},
+        )
+    except Exception as exc:
+        logger.warning("AI parser failed for %s: %s", document_type, exc)
+        ai_result = None
+
+    # 4. Merge results
+    merged = parser_merger.merge(structured_result, ai_result, raw)
+
+    # 5. Build response
+    response: dict = {
+        "document_type": merged.document_type,
+        "parse_summary": merged.parse_summary,
+        "confidence": merged.confidence,
+        "conflicts": [
+            {
+                "field": c.field,
+                "structured_value": c.structured_value,
+                "ai_value": c.ai_value,
+                "structured_confidence": c.structured_confidence,
+                "ai_confidence": c.ai_confidence,
+            }
+            for c in merged.conflicts
+        ],
+        "source": merged.source,
+    }
+
+    # Spread top-level fields into response (e.g. "creditors", "total_liabilities")
+    for key, value in merged.fields.items():
+        if key not in response:
+            response[key] = value
+
+    return response
+
+
+@app.post("/api/upload/any/aged-payables", tags=["Universal Upload"])
+async def upload_any_aged_payables(file: UploadFile):
+    """Upload any file type for aged payables parsing (structured + AI dual parser)."""
+    try:
+        return await _handle_any_upload(file, "aged_payables")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected error in /api/upload/any/aged-payables")
+        raise HTTPException(status_code=500, detail=f"Parse error: {exc}")
+
+
+@app.post("/api/upload/any/balance-sheet", tags=["Universal Upload"])
+async def upload_any_balance_sheet(file: UploadFile):
+    """Upload any file type for balance sheet parsing (structured + AI dual parser)."""
+    try:
+        return await _handle_any_upload(file, "balance_sheet")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected error in /api/upload/any/balance-sheet")
+        raise HTTPException(status_code=500, detail=f"Parse error: {exc}")
+
+
+@app.post("/api/upload/any/bank-statement", tags=["Universal Upload"])
+async def upload_any_bank_statement(file: UploadFile):
+    """Upload any file type for bank statement parsing (structured + AI dual parser)."""
+    try:
+        return await _handle_any_upload(file, "bank_statement")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected error in /api/upload/any/bank-statement")
+        raise HTTPException(status_code=500, detail=f"Parse error: {exc}")
+
+
+@app.post("/api/upload/any/pnl", tags=["Universal Upload"])
+async def upload_any_pnl(file: UploadFile):
+    """Upload any file type for P&L parsing (structured + AI dual parser)."""
+    try:
+        return await _handle_any_upload(file, "pnl")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Unexpected error in /api/upload/any/pnl")
+        raise HTTPException(status_code=500, detail=f"Parse error: {exc}")
 
 
 # ===================================================================
