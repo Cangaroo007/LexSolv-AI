@@ -38,3 +38,7 @@ openpyxl>=3.1.0
 
 # AI — Claude API for narrative generation
 anthropic>=0.40.0
+
+# Document ingestion — PDF + image preprocessing
+pdfplumber>=0.10.0
+Pillow>=10.0.0
